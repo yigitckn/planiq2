@@ -392,17 +392,29 @@
                     // OpenAI API entegrasyonu için
                     const generateAIRecommendations = async (prompt) => {
                         try {
-                            // Kendi backend proxy'mizi kullan
-                            console.log('Gemini AI + Google Search çalışıyor...');
+                            // OpenAI API'yi dene (CORS proxy ile)
+                            console.log('OpenAI API + CORS proxy çalışıyor...');
                             
-                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
+                            const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${localStorage.getItem('openai_api_key') || 'sk-proj-placeholder'}`
                                 },
                                 body: JSON.stringify({
-                                    prompt: prompt,
-                                    apiKey: localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'
+                                    model: 'gpt-3.5-turbo',
+                                    messages: [
+                                        {
+                                            role: 'system',
+                                            content: 'Sen bir restoran öneri uzmanısın. Kullanıcının şehrine özel gerçek restoran isimleri ve açıklamaları ver.'
+                                        },
+                                        {
+                                            role: 'user',
+                                            content: prompt
+                                        }
+                                    ],
+                                    max_tokens: 500,
+                                    temperature: 0.7
                                 })
                             });
 
@@ -493,6 +505,23 @@
                                         `Alsancak Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
                                         `Bornova Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
                                     ]
+                                },
+                                'kağıthane': {
+                                    'kahvaltı': [
+                                        `Kağıthane Kahvaltı Evi:\n${city} bölgesinde taze malzemelerle hazırlanan geleneksel kahvaltı lezzetleri sunan, sıcak ve samimi atmosferi olan popüler mekan.`,
+                                        `Modern Kafe:\n${city} bölgesinde uluslararası kahvaltı seçenekleri ve kaliteli kahve çeşitleri sunan, çağdaş tasarımı olan popüler mekan.`,
+                                        `Geleneksel Restoran:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan, otantik atmosferi olan popüler mekan.`
+                                    ],
+                                    'öğle yemeği': [
+                                        `Kağıthane Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Hızlı Servis:\n${city} bölgesinde pratik öğle yemeği seçenekleri sunan, hızlı servisi olan popüler mekan.`,
+                                        `Ev Yemekleri:\n${city} bölgesinde sıcak yemek seçenekleri sunan, ev yemeği tadında lezzetler.`
+                                    ],
+                                    'akşam yemeği': [
+                                        `Kağıthane Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
+                                        `Modern Mutfak:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
+                                        `Geleneksel Restoran:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
+                                    ]
                                 }
                             };
                             
@@ -502,6 +531,10 @@
                                 cityKey = 'ankara';
                             } else if (cityLower.includes('izmir') || cityLower.includes('konak') || cityLower.includes('alsancak')) {
                                 cityKey = 'izmir';
+                            } else if (cityLower.includes('kağıthane') || cityLower.includes('kağıthane')) {
+                                cityKey = 'kağıthane';
+                            } else if (cityLower.includes('sarıyer') || cityLower.includes('sariyer')) {
+                                cityKey = 'sarıyer';
                             } else if (cityLower.includes('istanbul') || cityLower.includes('beşiktaş') || cityLower.includes('şişli') || cityLower.includes('kadıköy')) {
                                 cityKey = 'istanbul';
                             }
@@ -518,6 +551,9 @@
                     const userLocation = userData?.location || city;
                     const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
                     
+                    console.log('Kullanıcının şehri:', userCity);
+                    console.log('userData:', userData);
+                    
                     // AI için prompt oluştur - gerçek lokasyon bazlı
                     const cuisineText = userCuisines && userCuisines.length > 0 
                         ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
@@ -531,12 +567,12 @@
                     
                     const currentMealType = mealTypeTurkish[mealType] || mealType;
                     
-                    const aiPrompt = `${userCity} bölgesinde ${currentMealType} için gerçek restoran önerileri istiyorum. ${cuisineText}. 
+                    const aiPrompt = `Kullanıcı ${userCity} şehrinde yaşıyor. ${userCity} şehrinde ${currentMealType} için gerçek restoran önerileri istiyorum. ${cuisineText}. 
                     
-                    Lütfen ${userCity} bölgesinde gerçekten var olan 3-4 farklı restoran öner, her birinin adını ve detaylı açıklamasını ver. 
+                    Lütfen ${userCity} şehrinde gerçekten var olan 3-4 farklı restoran öner, her birinin adını ve detaylı açıklamasını ver. 
                     
                     ÖNEMLİ: 
-                    - Sadece ${userCity} bölgesindeki GERÇEK restoran isimlerini ver
+                    - Sadece ${userCity} şehrindeki GERÇEK restoran isimlerini ver
                     - Her restoran için kısa ama öz açıklama yaz
                     - Restoranın özelliklerini, mutfağını, atmosferini belirt
                     - Format: "Restoran Adı:\nAçıklama: [Detaylı açıklama]"
@@ -545,7 +581,7 @@
                     "Pişi Breakfast & Burger:
                     Açıklama: Beşiktaş Kahvaltıcılar Sokağı'nda pişi bazlı kahvaltılar sunan popüler mekan."
                     
-                    Sadece ${userCity} bölgesindeki gerçek restoranları ver, başka açıklama yapma.`;
+                    Sadece ${userCity} şehrindeki gerçek restoranları ver, başka açıklama yapma.`;
                     
                     // AI'dan öneri al
                     const aiResponse = await generateAIRecommendations(aiPrompt);

@@ -24,7 +24,7 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        const { prompt, apiKey } = JSON.parse(event.body);
+        const { prompt } = JSON.parse(event.body);
         
         if (!prompt) {
             return {
@@ -34,8 +34,8 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Gemini API çağrısı
-        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'}`, {
+        // Gemini API çağrısı - bizim key'imizi kullan
+        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
