@@ -1,0 +1,2732 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanIQ - Akıllı Günlük Planlayıcı</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        @keyframes slideUp {
+            0% { transform: translateY(20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes bounce {
+            0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0); }
+            40%, 43% { transform: translate3d(0, -30px, 0); }
+            70% { transform: translate3d(0, -15px, 0); }
+            90% { transform: translate3d(0, -4px, 0); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
+        .animate-slideUp { animation: slideUp 0.5s ease-out; }
+        .animate-bounce { animation: bounce 1.5s ease-in-out infinite; }
+        .animate-pulse { animation: pulse 2s ease-in-out infinite; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+        
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyARs7TFmAOSq88lTgYSlUJjGoQP_rt9SwA",
+            authDomain: "planiq-170ca.firebaseapp.com",
+            projectId: "planiq-170ca",
+            storageBucket: "planiq-170ca.firebasestorage.app",
+            messagingSenderId: "110643251007",
+            appId: "1:110643251007:web:28d01c098db5f74280358a",
+            measurementId: "G-VZJR3XE0XT"
+        };
+        
+        // Initialize Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        
+        // Helper Functions
+        const formatDateKey = (date) => {
+            if (!(date instanceof Date) || isNaN(date)) {
+                return new Date().toISOString().split('T')[0];
+            }
+            return date.toISOString().split('T')[0];
+        };
+        
+        const formatFullDate = (date) => {
+            if (!(date instanceof Date) || isNaN(date)) {
+                date = new Date();
+            }
+            return new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' }).format(date);
+        };
+        
+        const formatDisplayDate = (date) => {
+            if (!(date instanceof Date) || isNaN(date)) {
+                date = new Date();
+            }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            
+            const targetDate = new Date(date);
+            targetDate.setHours(0, 0, 0, 0);
+            
+            if (targetDate.getTime() === today.getTime()) return "Bugün";
+            if (targetDate.getTime() === tomorrow.getTime()) return "Yarın";
+            if (targetDate.getTime() === yesterday.getTime()) return "Dün";
+            
+            const day = String(targetDate.getDate()).padStart(2, '0');
+            const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+            return `${day}/${month}`;
+        };
+        
+        const parseTime = (timeString) => {
+            if (!timeString || !timeString.includes(':')) return null;
+            const [hours, minutes] = timeString.split(':').map(Number);
+            if (isNaN(hours) || isNaN(minutes)) return null;
+            return { hours, minutes };
+        };
+        
+        const isTimeLaterOrEqual = (time1, time2) => {
+            const t1 = parseTime(time1);
+            const t2 = parseTime(time2);
+            if (!t1 || !t2) return false;
+            if (t1.hours > t2.hours) return true;
+            if (t1.hours === t2.hours && t1.minutes >= t2.minutes) return true;
+            return false;
+        };
+        
+        const addMinutesToTime = (timeString, minutesToAdd) => {
+            const time = parseTime(timeString);
+            if (!time) return timeString;
+            
+            let totalMinutes = time.hours * 60 + time.minutes + minutesToAdd;
+            totalMinutes = (totalMinutes + 1440) % 1440;
+            
+            const newHours = Math.floor(totalMinutes / 60);
+            const newMinutes = totalMinutes % 60;
+            
+            return `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
+        };
+        
+        // Splash Screen Component
+        const SplashScreen = () => {
+            return React.createElement('div', {
+                className: "fixed inset-0 bg-gradient-to-br from-purple-600 via-purple-500 to-pink-500 flex items-center justify-center z-50 overflow-hidden"
+            }, [
+                React.createElement('div', {
+                    key: 'bubbles',
+                    className: "absolute top-1/4 left-1/4 w-48 h-48 bg-white/10 rounded-full filter blur-3xl animate-pulse"
+                }),
+                React.createElement('div', {
+                    key: 'bubbles2',
+                    className: "absolute bottom-1/4 right-1/4 w-32 h-32 bg-white/10 rounded-full filter blur-3xl animate-pulse"
+                }),
+                React.createElement('div', {
+                    key: 'content',
+                    className: "text-center animate-fadeIn relative z-10"
+                }, [
+                    React.createElement('div', {
+                        key: 'logo',
+                        className: "mb-6 animate-bounce"
+                    }, React.createElement('div', {
+                        className: "w-32 h-32 bg-white rounded-3xl shadow-2xl flex items-center justify-center mx-auto transform transition-transform duration-500 hover:scale-110"
+                    }, React.createElement('div', {
+                        className: "w-20 h-20 text-purple-600 animate-pulse"
+                    }, '🧠'))),
+                    React.createElement('h1', {
+                        key: 'title',
+                        className: "text-6xl font-bold text-white mb-4 animate-slideUp"
+                    }, [
+                        'Plan',
+                        React.createElement('span', {
+                            key: 'iq',
+                            className: "text-yellow-300"
+                        }, 'IQ')
+                    ]),
+                    React.createElement('p', {
+                        key: 'subtitle',
+                        className: "text-white/90 text-xl animate-slideUp"
+                    }, 'Akıllı Günlük Planlayıcın')
+                ])
+            ]);
+        };
+        
+        // DailyPlanCard Component
+        const DailyPlanCard = ({ day, userData, selectedDateKey, userId, isDark }) => {
+            const [tasks, setTasks] = useState([]);
+            const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+            const [isAddingTask, setIsAddingTask] = useState(false);
+            const [newTask, setNewTask] = useState({ time: '', name: '' });
+            const [modalTask, setModalTask] = useState(null);
+            const [modalContentStage, setModalContentStage] = useState('initial');
+            const [aiSuggestionContent, setAiSuggestionContent] = useState(null);
+            
+            // Gerçek AI tarif öneri fonksiyonu
+            const generateRecipeSuggestions = async (mealType, cuisine, userCuisines) => {
+                try {
+                    // AI için tarif önerisi
+                    const generateAIRecipe = async (prompt) => {
+                        try {
+                            // Gemini AI API - Google Search ile gerçek tarifler
+                            console.log('Gemini AI + Google Search tarif önerileri çalışıyor...');
+                            
+                            const geminiResponse = await fetch('https://cors-anywhere.herokuapp.com/https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + (localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'), {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
+                                body: JSON.stringify({
+                                    contents: [{
+                                        parts: [{
+                                            text: prompt
+                                        }]
+                                    }],
+                                    tools: [{ "google_search": {} }], // Google Search aracı
+                                    generationConfig: {
+                                        temperature: 0.7,
+                                        topK: 40,
+                                        topP: 0.95,
+                                        maxOutputTokens: 500,
+                                    }
+                                })
+                            });
+
+                            if (geminiResponse.ok) {
+                                const data = await geminiResponse.json();
+                                console.log('Gemini API Response:', data);
+                                
+                                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+                                    const result = data.candidates[0].content.parts[0].text;
+                                    console.log('Gemini AI Success:', result);
+                                    return result;
+                                }
+                            } else {
+                                console.log('Gemini API Error:', geminiResponse.status, await geminiResponse.text());
+                            }
+                        } catch (error) {
+                            console.log('Gemini AI failed:', error);
+                        }
+
+                        // Fallback: Mock AI (API çalışmazsa)
+                        console.log('Fallback Mock AI tarif önerileri çalışıyor...');
+                        
+                        // Öğün tipini çıkar - daha kesin kontrol
+                        let mealType = 'kahvaltı'; // varsayılan
+                        if (prompt.includes('öğle yemeği') || prompt.includes('öğle')) {
+                            mealType = 'öğle yemeği';
+                        } else if (prompt.includes('akşam yemeği') || prompt.includes('akşam')) {
+                            mealType = 'akşam yemeği';
+                        } else if (prompt.includes('kahvaltı')) {
+                            mealType = 'kahvaltı';
+                        }
+                        
+                        console.log('Algılanan öğün tipi:', mealType);
+                        
+                        // Mutfak tipini çıkar
+                        const cuisine = prompt.includes('Türk') ? 'Türk' : 
+                                      prompt.includes('İtalyan') ? 'İtalyan' : 
+                                      prompt.includes('Uzak Doğu') ? 'Uzak Doğu' : 'genel';
+                        
+                        // Gerçekçi tarif önerileri oluştur - kısa ve öz
+                        const mockRecipes = {
+                            'kahvaltı': [
+                                `Menemen:\nTaze domates, biber ve yumurta ile hazırlanan Türk kahvaltısının vazgeçilmez lezzeti. 15 dakikada hazır.`,
+                                `Omlet:\nKlasik yumurta yemeği, taze otlar ve peynirle zenginleştirilmiş. 10 dakikada hazır.`,
+                                `Serpme Kahvaltı:\nPeynir, zeytin, domates, salatalık ve reçel ile hazırlanan geleneksel Türk kahvaltısı.`,
+                                `Avokado Tost:\nTaze avokado, limon ve tuz ile hazırlanan modern kahvaltı. 5 dakikada hazır.`,
+                                `Yulaf Ezmesi:\nSüt ile pişirilen yulaf, taze meyveler ve bal ile tatlandırılmış. 10 dakikada hazır.`
+                            ],
+                            'öğle yemeği': [
+                                `Kebap:\nGeleneksel Türk kebap çeşitleri, taze et ve baharatlarla hazırlanan. 30 dakikada hazır.`,
+                                `Mantı:\nHamur içi et ile doldurulmuş, yoğurt sosu ile servis edilen. 45 dakikada hazır.`,
+                                `Lahmacun:\nİnce hamur üzerine kıyma, domates ve baharatlarla hazırlanan. 25 dakikada hazır.`,
+                                `Çorba:\nSıcak ve besleyici çorba çeşitleri. 20 dakikada hazır.`,
+                                `Salata:\nTaze yeşillikler, sebzeler ve protein kaynakları ile hazırlanan. 15 dakikada hazır.`,
+                                `Sandviç:\nEkmek arası taze malzemelerle hazırlanan pratik yemek. 10 dakikada hazır.`
+                            ],
+                            'akşam yemeği': [
+                                `Kuzu Tandır:\nUzun süre pişirilen kuzu eti, geleneksel Türk mutfağının özel lezzeti. 2 saatte hazır.`,
+                                `Balık:\nTaze balık çeşitleri, zeytinyağı ve limon ile hazırlanan. 30 dakikada hazır.`,
+                                `Pasta:\nMakarna çeşitleri, çeşitli soslarla hazırlanan doyurucu yemek. 25 dakikada hazır.`,
+                                `Et Yemeği:\nTavuk, dana veya kuzu eti ile hazırlanan protein açısından zengin yemek. 45 dakikada hazır.`,
+                                `Sebze Yemeği:\nTaze sebzelerle hazırlanan hafif ve sağlıklı yemek. 20 dakikada hazır.`,
+                                `Pilav:\nPirinç pilavı, et suyu ile hazırlanan geleneksel yan yemek. 30 dakikada hazır.`
+                            ]
+                        };
+                        
+                        // Rastgele 3-4 tarif seç
+                        const recipes = mockRecipes[mealType] || mockRecipes['kahvaltı'];
+                        const selectedRecipes = recipes.sort(() => 0.5 - Math.random()).slice(0, 3);
+                        
+                        // AI yanıtı formatında döndür
+                        return selectedRecipes.join('\n\n');
+                    };
+                    
+                    // AI için prompt oluştur
+                    const cuisineText = userCuisines && userCuisines.length > 0 
+                        ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
+                        : 'Genel mutfak';
+                    
+                    const mealTypeTurkish = {
+                        'kahvaltı': 'kahvaltı',
+                        'öğle yemeği': 'öğle yemeği', 
+                        'akşam yemeği': 'akşam yemeği'
+                    };
+                    
+                    const currentMealType = mealTypeTurkish[mealType] || mealType;
+                    
+                    const aiPrompt = `${currentMealType} için ${cuisineText} tarifleri öner. 
+                    Lütfen 2-3 farklı lezzetli tarif öner, her birinin adını ve detaylı açıklamasını ver. 
+                    Format: 
+                    "Tarif Adı:
+                    Açıklama: [Tarifin malzemelerini, hazırlanışını, özelliklerini detaylıca anlat]"
+                    
+                    Örnek:
+                    "Menemen:
+                    Açıklama: Domates, biber ve yumurta ile hazırlanan, Türk kahvaltılarının vazgeçilmez lezzeti. Taze domates ve biberlerin kavrulmasıyla hazırlanan bu pratik yemek, doyurucu ve besleyicidir."
+                    
+                    Sadece tarif isimlerini ve açıklamalarını ver, başka açıklama yapma.`;
+                    
+                    // AI'dan tarif al
+                    const aiResponse = await generateAIRecipe(aiPrompt);
+                    
+                    if (aiResponse) {
+                        // AI yanıtını parse et - tarif adı ve açıklama formatında
+                        const lines = aiResponse.split('\n').filter(line => line.trim());
+                        const suggestions = [];
+                        let currentRecipe = null;
+                        
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i].trim();
+                            
+                            // Tarif adı (Açıklama: ile bitmeyen satırlar)
+                            if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
+                                if (currentRecipe) {
+                                    suggestions.push(currentRecipe);
+                                }
+                                currentRecipe = {
+                                    name: line.replace(/^[-•*]\s*/, ''),
+                                    description: ''
+                                };
+                            }
+                            // Açıklama
+                            else if (line.startsWith('Açıklama:') && currentRecipe) {
+                                currentRecipe.description = line.replace('Açıklama:', '').trim();
+                            }
+                        }
+                        
+                        // Son tarifi ekle
+                        if (currentRecipe) {
+                            suggestions.push(currentRecipe);
+                        }
+                        
+                        if (suggestions.length > 0) {
+                            return suggestions.map(s => `${s.name}:\n${s.description}`);
+                        }
+                    }
+                    
+                    // Fallback: Statik tarifler
+                    const recipes = {
+                    kahvaltı: {
+                        'genel': ['Omlet - Klasik Yumurta Yemeği', 'Menemen - Türk Kahvaltı Klasikleri', 'Yulaf Ezmesi - Sağlıklı Kahvaltı'],
+                        'Türk Mutfağı': ['Börek - Geleneksel Türk Böreği', 'Pogaca - Tuzlu Hamur İşi', 'Simit - Klasik Türk Simidi'],
+                        'Bulgar': ['Banitsa - Geleneksel Bulgar Böreği', 'Mekitsa - Bulgar Kızartması', 'Kashkaval - Bulgar Peyniri'],
+                        'İtalyan': ['Frittata - İtalyan Omleti', 'Panettone - İtalyan Tatlısı', 'Cappuccino - İtalyan Kahvesi'],
+                        'Uzak Doğu': ['Miso Çorbası - Japon Kahvaltısı', 'Congee - Pirinç Lapası', 'Dim Sum - Çin Kahvaltısı'],
+                        'Meksika': ['Huevos Rancheros - Meksika Kahvaltısı', 'Chilaquiles - Meksika Klasikleri', 'Breakfast Burrito - Meksika Burritosu'],
+                        'Hint': ['Masala Dosa - Hint Kahvaltısı', 'Paratha - Hint Ekmeği', 'Chai - Hint Çayı']
+                    },
+                    'öğle yemeği': {
+                        'genel': ['Salata', 'Sandviç', 'Çorba', 'Makarna', 'Pilav'],
+                        'Türk Mutfağı': ['Döner', 'Lahmacun', 'Pide', 'Mercimek Çorbası'],
+                        'İtalyan': ['Pizza', 'Risotto', 'Pasta', 'Minestrone'],
+                        'Uzak Doğu': ['Sushi', 'Ramen', 'Pad Thai', 'Teriyaki'],
+                        'Meksika': ['Tacos', 'Burrito', 'Quesadilla', 'Enchiladas'],
+                        'Hint': ['Biryani', 'Curry', 'Tandoori', 'Dal']
+                    },
+                    'akşam yemeği': {
+                        'genel': ['Izgara Et', 'Balık', 'Sebze Yemeği', 'Pilav', 'Salata'],
+                        'Türk Mutfağı': ['Kebap', 'Karnıyarık', 'Mantı', 'Baklava'],
+                        'İtalyan': ['Spaghetti', 'Lasagna', 'Osso Buco', 'Tiramisu'],
+                        'Uzak Doğu': ['Sushi', 'Tempura', 'Stir Fry', 'Mochi'],
+                        'Meksika': ['Fajitas', 'Chiles Rellenos', 'Tres Leches'],
+                        'Hint': ['Butter Chicken', 'Palak Paneer', 'Naan', 'Gulab Jamun']
+                    }
+                };
+                
+                const cuisineKey = userCuisines.includes(cuisine) ? cuisine : 'genel';
+                const mealRecipes = recipes[mealType] || recipes.kahvaltı;
+                const suggestions = mealRecipes[cuisineKey] || mealRecipes.genel;
+                
+                return suggestions.slice(0, 3); // İlk 3 öneriyi döndür
+                } catch (error) {
+                    console.error('Tarif öneri hatası:', error);
+                    // Hata durumunda genel öneriler
+                    return ['Omlet', 'Menemen', 'Yulaf Ezmesi'];
+                }
+            };
+            
+            // Gerçek AI restoran öneri fonksiyonu
+            const generateRestaurantSuggestions = async (mealType, city, userCuisines) => {
+                console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
+                try {
+                    // OpenAI API entegrasyonu için
+                    const generateAIRecommendations = async (prompt) => {
+                        try {
+                            // Kendi backend proxy'mizi kullan
+                            console.log('Gemini AI + Google Search çalışıyor...');
+                            
+                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    prompt: prompt,
+                                    apiKey: localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'
+                                })
+                            });
+
+                            if (geminiResponse.ok) {
+                                const data = await geminiResponse.json();
+                                console.log('Gemini API Response:', data);
+                                
+                                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+                                    const result = data.candidates[0].content.parts[0].text;
+                                    console.log('Gemini AI Success:', result);
+                                    return result;
+                                }
+                            } else {
+                                console.log('Gemini API Error:', geminiResponse.status, await geminiResponse.text());
+                            }
+                        } catch (error) {
+                            console.log('Gemini AI failed:', error);
+                        }
+
+                        // Fallback: Güçlü Mock AI (API çalışmazsa)
+                        console.log('Fallback Mock AI çalışıyor...');
+                        
+                        const locationMatch = prompt.match(/(\w+)\s+şehrinde/);
+                        const city = locationMatch ? locationMatch[1] : 'İstanbul';
+                        
+                        let mealType = 'kahvaltı';
+                        if (prompt.includes('öğle yemeği') || prompt.includes('öğle')) {
+                            mealType = 'öğle yemeği';
+                        } else if (prompt.includes('akşam yemeği') || prompt.includes('akşam')) {
+                            mealType = 'akşam yemeği';
+                        } else if (prompt.includes('kahvaltı')) {
+                            mealType = 'kahvaltı';
+                        }
+                        
+                        // Akıllı Mock AI - Kullanıcının şehrine göre özel öneriler
+                        const generateCitySpecificRestaurants = (city, mealType) => {
+                            const cityLower = city.toLowerCase();
+                            
+                            // Şehir bazlı özel restoran isimleri
+                            const cityRestaurants = {
+                                'istanbul': {
+                                    'kahvaltı': [
+                                        `Van Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısının en güzel örneklerini sunan popüler mekan.`,
+                                        `Çakır Kahvaltı:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`,
+                                        `Mado Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan popüler mekan.`
+                                    ],
+                                    'öğle yemeği': [
+                                        `Hacı Abdullah:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Çiya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
+                                        `Köfteci Ramiz:\n${city} bölgesinde köfte ve ızgara çeşitleriyle ünlü, hızlı servisi olan popüler mekan.`
+                                    ],
+                                    'akşam yemeği': [
+                                        `Mikla:\n${city} bölgesinde fine dining deneyimi sunan, şık atmosferi ve özel akşam menüleriyle ünlü romantik restoran.`,
+                                        `Neolokal:\n${city} bölgesinde modern Türk mutfağı sunan, akşam yemeği için özel menüleri olan şık mekan.`,
+                                        `Sunset Grill & Bar:\n${city} bölgesinde manzaralı, akşam yemeği için mükemmel atmosfer sunan lüks restoran.`
+                                    ]
+                                },
+                                'ankara': {
+                                    'kahvaltı': [
+                                        `Kızılay Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısı sunan, sıcak atmosferi olan popüler mekan.`,
+                                        `Çankaya Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
+                                        `Ulus Kahvaltı Salonu:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`
+                                    ],
+                                    'öğle yemeği': [
+                                        `Ankara Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Çankaya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
+                                        `Kızılay Lokantası:\n${city} bölgesinde ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`
+                                    ],
+                                    'akşam yemeği': [
+                                        `Ankara Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
+                                        `Çankaya Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
+                                        `Ulus Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
+                                    ]
+                                },
+                                'izmir': {
+                                    'kahvaltı': [
+                                        `Konak Kahvaltı Evi:\n${city} bölgesinde Ege mutfağının lezzetlerini sunan, deniz manzaralı popüler mekan.`,
+                                        `Alsancak Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
+                                        `Bornova Kahvaltı Salonu:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`
+                                    ],
+                                    'öğle yemeği': [
+                                        `İzmir Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Ege Sofrası:\n${city} bölgesinde Ege mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
+                                        `Konak Lokantası:\n${city} bölgesinde ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`
+                                    ],
+                                    'akşam yemeği': [
+                                        `İzmir Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
+                                        `Alsancak Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
+                                        `Bornova Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
+                                    ]
+                                }
+                            };
+                            
+                            // Şehir algılama
+                            let cityKey = 'istanbul'; // varsayılan
+                            if (cityLower.includes('ankara') || cityLower.includes('çankaya') || cityLower.includes('kızılay')) {
+                                cityKey = 'ankara';
+                            } else if (cityLower.includes('izmir') || cityLower.includes('konak') || cityLower.includes('alsancak')) {
+                                cityKey = 'izmir';
+                            } else if (cityLower.includes('istanbul') || cityLower.includes('beşiktaş') || cityLower.includes('şişli') || cityLower.includes('kadıköy')) {
+                                cityKey = 'istanbul';
+                            }
+                            
+                            return cityRestaurants[cityKey]?.[mealType] || cityRestaurants['istanbul']['kahvaltı'];
+                        };
+                        
+                        const responses = generateCitySpecificRestaurants(city, mealType);
+                        const selectedResponses = responses.sort(() => 0.5 - Math.random()).slice(0, 3);
+                        return selectedResponses;
+                    };
+                    
+                    // Kullanıcının onboarding'de girdiği gerçek lokasyonu al
+                    const userLocation = userData?.location || city;
+                    const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
+                    
+                    // AI için prompt oluştur - gerçek lokasyon bazlı
+                    const cuisineText = userCuisines && userCuisines.length > 0 
+                        ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
+                        : 'Mutfak tercihi belirtilmemiş';
+                    
+                    const mealTypeTurkish = {
+                        'kahvaltı': 'kahvaltı',
+                        'öğle yemeği': 'öğle yemeği',
+                        'akşam yemeği': 'akşam yemeği'
+                    };
+                    
+                    const currentMealType = mealTypeTurkish[mealType] || mealType;
+                    
+                    const aiPrompt = `${userCity} bölgesinde ${currentMealType} için gerçek restoran önerileri istiyorum. ${cuisineText}. 
+                    
+                    Lütfen ${userCity} bölgesinde gerçekten var olan 3-4 farklı restoran öner, her birinin adını ve detaylı açıklamasını ver. 
+                    
+                    ÖNEMLİ: 
+                    - Sadece ${userCity} bölgesindeki GERÇEK restoran isimlerini ver
+                    - Her restoran için kısa ama öz açıklama yaz
+                    - Restoranın özelliklerini, mutfağını, atmosferini belirt
+                    - Format: "Restoran Adı:\nAçıklama: [Detaylı açıklama]"
+                    
+                    Örnek format:
+                    "Pişi Breakfast & Burger:
+                    Açıklama: Beşiktaş Kahvaltıcılar Sokağı'nda pişi bazlı kahvaltılar sunan popüler mekan."
+                    
+                    Sadece ${userCity} bölgesindeki gerçek restoranları ver, başka açıklama yapma.`;
+                    
+                    // AI'dan öneri al
+                    const aiResponse = await generateAIRecommendations(aiPrompt);
+                    
+                    if (aiResponse && typeof aiResponse === 'string') {
+                        // AI yanıtını parse et - restoran adı ve açıklama formatında
+                        const lines = aiResponse.split('\n').filter(line => line.trim());
+                        const suggestions = [];
+                        let currentRestaurant = null;
+                        
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i].trim();
+                            
+                            // Restoran adı (Açıklama: ile bitmeyen satırlar)
+                            if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
+                                if (currentRestaurant) {
+                                    suggestions.push(currentRestaurant);
+                                }
+                                currentRestaurant = {
+                                    name: line.replace(/^[-•*]\s*/, ''),
+                                    description: ''
+                                };
+                            }
+                            // Açıklama
+                            else if (line.startsWith('Açıklama:') && currentRestaurant) {
+                                currentRestaurant.description = line.replace('Açıklama:', '').trim();
+                            }
+                        }
+                        
+                        // Son restoranı ekle
+                        if (currentRestaurant) {
+                            suggestions.push(currentRestaurant);
+                        }
+                        
+                        if (suggestions.length > 0) {
+                            return suggestions.map(s => `${s.name}:\n${s.description}`);
+                        }
+                    }
+                    
+                    // Fallback: Statik veriler (API çalışmazsa) - Kullanıcının lokasyonuna göre
+                    const fallbackRestaurants = {
+                        'sofya': {
+                            kahvaltı: {
+                                'Türk Mutfağı': [
+                                    'Sultan Sofya:\nGeleneksel Türk kahvaltısının en güzel örneklerini sunan, sıcak ve samimi atmosferi olan popüler bir mekandır.',
+                                    'Balkan Evi:\nKarışık kahvaltı tabağı ve Balkan mutfağının lezzetlerini sunan, geniş menü seçenekleri olan popüler bir mekandır.',
+                                    'İstanbul Kafe:\nSerpme kahvaltı ve Türk çayı geleneğini yaşatan, huzurlu bir ortama sahip popüler bir mekandır.'
+                                ],
+                                'Bulgar': [
+                                    'Mekitsa & Kafe:\nGeleneksel Bulgar kahvaltısı ve taze mekitsa çeşitleri sunan, yerel lezzetleri keşfetmek için ideal bir mekandır.',
+                                    'Banitsa House:\nTaze banitsa ve çay eşliğinde geleneksel Bulgar kahvaltısı sunan, sıcak atmosferi olan popüler bir mekandır.',
+                                    'Sofia Central:\nModern Bulgar kahvaltısı ve çağdaş sunumlarla dikkat çeken, şehir merkezinde yer alan popüler bir mekandır.'
+                                ],
+                                'genel': [
+                                    'Costa Coffee:\nUluslararası kahvaltı seçenekleri ve kaliteli kahve çeşitleri sunan, modern atmosferi olan popüler bir mekandır.',
+                                    'Starbucks:\nKlasik kahvaltı seçenekleri ve özel kahve çeşitleri sunan, rahat çalışma ortamı olan popüler bir mekandır.',
+                                    'Cafe Central:\nAvrupa tarzı kahvaltı ve pastane ürünleri sunan, şık dekorasyonu olan popüler bir mekandır.'
+                                ]
+                            },
+                            'öğle yemeği': {
+                                'Türk Mutfağı': [
+                                    'Kebapçı İskender:\nGeleneksel Türk mutfağının en güzel örneklerini sunan, özellikle kebap çeşitleriyle ünlü popüler bir mekandır.',
+                                    'Sultan Sofya:\nTürk yemekleri ve geleneksel lezzetleri sunan, sıcak atmosferi olan popüler bir mekandır.',
+                                    'Balkan Evi:\nKarışık Balkan mutfağı ve çeşitli lezzetler sunan, geniş menü seçenekleri olan popüler bir mekandır.'
+                                ],
+                                'Bulgar': [
+                                    'Shtastliveca:\nGeleneksel Bulgar mutfağının en güzel örneklerini sunan, yerel lezzetleri keşfetmek için ideal bir mekandır.',
+                                    'Made in Home:\nModern Bulgar yemekleri ve çağdaş sunumlarla dikkat çeken, şık dekorasyonu olan popüler bir mekandır.',
+                                    'Pod Lipite:\nKlasik Bulgar restoranı ve geleneksel lezzetleri sunan, sıcak atmosferi olan popüler bir mekandır.'
+                                ],
+                                'genel': [
+                                    'Happy Bar & Grill:\nHızlı yemek ve çeşitli lezzetler sunan, modern atmosferi olan popüler bir mekandır.',
+                                    'McDonald\'s:\nFast food ve hızlı servis sunan, uluslararası standartlarda popüler bir mekandır.',
+                                    'Subway:\nSağlıklı sandviçler ve taze malzemelerle hazırlanan yemekler sunan popüler bir mekandır.'
+                                ]
+                            },
+                            'akşam yemeği': {
+                                'Türk Mutfağı': [
+                                    'Kebapçı İskender:\nAkşam yemeği için özel menüleri ve geleneksel Türk mutfağının en güzel örneklerini sunan popüler bir mekandır.',
+                                    'Sultan Sofya:\nTürk mutfağı ve akşam yemeği lezzetleri sunan, romantik atmosferi olan popüler bir mekandır.',
+                                    'Balkan Evi:\nAkşam menüsü ve Balkan mutfağının çeşitli lezzetlerini sunan, sıcak atmosferi olan popüler bir mekandır.'
+                                ],
+                                'Bulgar': [
+                                    'Shtastliveca:\nGeleneksel akşam yemeği ve Bulgar mutfağının en güzel örneklerini sunan popüler bir mekandır.',
+                                    'Made in Home:\nModern akşam menüsü ve çağdaş Bulgar yemekleri sunan, şık dekorasyonu olan popüler bir mekandır.',
+                                    'Pod Lipite:\nKlasik akşam yemeği ve geleneksel Bulgar lezzetleri sunan, sıcak atmosferi olan popüler bir mekandır.'
+                                ],
+                                'genel': [
+                                    'Happy Bar & Grill:\nAkşam yemeği ve çeşitli lezzetler sunan, canlı atmosferi olan popüler bir mekandır.',
+                                    'Pizza Palace:\nPizza ve pasta çeşitleri sunan, aile ortamı olan popüler bir mekandır.',
+                                    'Sushi Bar:\nJapon mutfağı ve sushi çeşitleri sunan, şık dekorasyonu olan popüler bir mekandır.'
+                                ]
+                            }
+                        },
+                        'şişli': {
+                            kahvaltı: {
+                                'Türk Mutfağı': [
+                                    'Van Kahvaltı Evi - Nişantaşı',
+                                    'Çakır Kahvaltı - Harbiye',
+                                    'Bebek Kahvaltı - Etiler',
+                                    'Serpme Kahvaltı - Maçka'
+                                ],
+                                'İtalyan': [
+                                    'Caffe Nero - City\'s Nişantaşı',
+                                    'Starbucks - Akmerkez',
+                                    'Caffe Vergnano - Teşvikiye'
+                                ],
+                                'Uzak Doğu': [
+                                    'SushiCo - City\'s Nişantaşı',
+                                    'Wagamama - Akmerkez',
+                                    'Zuma - Etiler'
+                                ],
+                                'Meksika': [
+                                    'Taco Bell - City\'s Nişantaşı',
+                                    'Chipotle - Akmerkez'
+                                ],
+                                'Hint': [
+                                    'Bombay Palace - Harbiye',
+                                    'Masala - Nişantaşı'
+                                ],
+                                'genel': [
+                                    'Kahve Dünyası - Harbiye',
+                                    'Simit Sarayı - Teşvikiye',
+                                    'Cafe Nero - Maçka'
+                                ]
+                            },
+                            'öğle yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Harbiye',
+                                    'Kebapçı İskender - Nişantaşı',
+                                    'Çiya Sofrası - Etiler',
+                                    'Lokma - Maçka'
+                                ],
+                                'İtalyan': [
+                                    'Pizza Express - City\'s Nişantaşı',
+                                    'Vapiano - Akmerkez',
+                                    'Rossopomodoro - Teşvikiye'
+                                ],
+                                'Uzak Doğu': [
+                                    'SushiCo - City\'s Nişantaşı',
+                                    'Wagamama - Akmerkez',
+                                    'Zuma - Etiler'
+                                ],
+                                'Meksika': [
+                                    'Taco Bell - City\'s Nişantaşı',
+                                    'Chipotle - Akmerkez'
+                                ],
+                                'Hint': [
+                                    'Bombay Palace - Harbiye',
+                                    'Masala - Nişantaşı'
+                                ],
+                                'genel': [
+                                    'Burger King - Harbiye',
+                                    'McDonald\'s - Teşvikiye',
+                                    'Subway - Maçka'
+                                ]
+                            },
+                            'akşam yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Harbiye',
+                                    'Kebapçı İskender - Nişantaşı',
+                                    'Çiya Sofrası - Etiler',
+                                    'Lokma - Maçka'
+                                ],
+                                'İtalyan': [
+                                    'Pizza Express - City\'s Nişantaşı',
+                                    'Vapiano - Akmerkez',
+                                    'Rossopomodoro - Teşvikiye'
+                                ],
+                                'Uzak Doğu': [
+                                    'SushiCo - City\'s Nişantaşı',
+                                    'Wagamama - Akmerkez',
+                                    'Zuma - Etiler'
+                                ],
+                                'Meksika': [
+                                    'Taco Bell - City\'s Nişantaşı',
+                                    'Chipotle - Akmerkez'
+                                ],
+                                'Hint': [
+                                    'Bombay Palace - Harbiye',
+                                    'Masala - Nişantaşı'
+                                ],
+                                'genel': [
+                                    'Burger King - Harbiye',
+                                    'McDonald\'s - Teşvikiye',
+                                    'Subway - Maçka'
+                                ]
+                            }
+                        },
+                        'kadıköy': {
+                            kahvaltı: {
+                                'Türk Mutfağı': [
+                                    'Çiya Sofrası - Kadıköy',
+                                    'Van Kahvaltı Evi - Moda',
+                                    'Bebek Kahvaltı - Fenerbahçe'
+                                ],
+                                'İtalyan': [
+                                    'Caffe Nero - Kadıköy',
+                                    'Starbucks - Moda',
+                                    'Caffe Vergnano - Fenerbahçe'
+                                ],
+                                'Uzak Doğu': [
+                                    'SushiCo - Kadıköy',
+                                    'Wagamama - Moda',
+                                    'Zuma - Fenerbahçe'
+                                ],
+                                'genel': [
+                                    'Kahve Dünyası - Kadıköy',
+                                    'Simit Sarayı - Moda',
+                                    'Cafe Nero - Fenerbahçe'
+                                ]
+                            },
+                            'öğle yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Kadıköy',
+                                    'Kebapçı İskender - Moda',
+                                    'Çiya Sofrası - Fenerbahçe'
+                                ],
+                                'İtalyan': [
+                                    'Pizza Express - Kadıköy',
+                                    'Vapiano - Moda',
+                                    'Rossopomodoro - Fenerbahçe'
+                                ],
+                                'genel': [
+                                    'Burger King - Kadıköy',
+                                    'McDonald\'s - Moda',
+                                    'Subway - Fenerbahçe'
+                                ]
+                            },
+                            'akşam yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Kadıköy',
+                                    'Kebapçı İskender - Moda',
+                                    'Çiya Sofrası - Fenerbahçe'
+                                ],
+                                'İtalyan': [
+                                    'Pizza Express - Kadıköy',
+                                    'Vapiano - Moda',
+                                    'Rossopomodoro - Fenerbahçe'
+                                ],
+                                'genel': [
+                                    'Burger King - Kadıköy',
+                                    'McDonald\'s - Moda',
+                                    'Subway - Fenerbahçe'
+                                ]
+                            }
+                        },
+                        'beşiktaş': {
+                            kahvaltı: {
+                                'Türk Mutfağı': [
+                                    'Van Kahvaltı Evi - Beşiktaş',
+                                    'Çakır Kahvaltı - Ortaköy',
+                                    'Bebek Kahvaltı - Bebek'
+                                ],
+                                'İtalyan': [
+                                    'Caffe Nero - Beşiktaş',
+                                    'Starbucks - Ortaköy',
+                                    'Caffe Vergnano - Bebek'
+                                ],
+                                'genel': [
+                                    'Kahve Dünyası - Beşiktaş',
+                                    'Simit Sarayı - Ortaköy',
+                                    'Cafe Nero - Bebek'
+                                ]
+                            },
+                            'öğle yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Beşiktaş',
+                                    'Kebapçı İskender - Ortaköy',
+                                    'Çiya Sofrası - Bebek'
+                                ],
+                                'genel': [
+                                    'Burger King - Beşiktaş',
+                                    'McDonald\'s - Ortaköy',
+                                    'Subway - Bebek'
+                                ]
+                            },
+                            'akşam yemeği': {
+                                'Türk Mutfağı': [
+                                    'Hacı Abdullah - Beşiktaş',
+                                    'Kebapçı İskender - Ortaköy',
+                                    'Çiya Sofrası - Bebek'
+                                ],
+                                'genel': [
+                                    'Burger King - Beşiktaş',
+                                    'McDonald\'s - Ortaköy',
+                                    'Subway - Bebek'
+                                ]
+                            }
+                        },
+                        'genel': {
+                            kahvaltı: {
+                                'genel': [
+                                    `Kahvaltı Evi:\n${userCity} şehrinde taze malzemelerle hazırlanan geleneksel kahvaltı lezzetleri sunan, sıcak ve samimi atmosferi olan popüler bir mekandır.`,
+                                    `Modern Kafe:\n${userCity} şehrinde uluslararası kahvaltı seçenekleri ve kaliteli kahve çeşitleri sunan, çağdaş tasarımı olan popüler bir mekandır.`,
+                                    `Geleneksel Restoran:\n${userCity} şehrinde yerel mutfağın en güzel örneklerini sunan, otantik atmosferi olan popüler bir mekandır.`
+                                ]
+                            },
+                            'öğle yemeği': {
+                                'genel': [
+                                    `Yerel Lokanta:\n${userCity} şehrinde hızlı servis ve ev yemekleri sunan, uygun fiyatlı popüler bir mekandır.`,
+                                    `Modern Restoran:\n${userCity} şehrinde sağlıklı seçenekler ve çağdaş lezzetler sunan, şık dekorasyonu olan popüler bir mekandır.`,
+                                    `Aile Restoranı:\n${userCity} şehrinde ev yapımı yemekler ve geniş menü seçenekleri sunan, sıcak atmosferi olan popüler bir mekandır.`
+                                ]
+                            },
+                            'akşam yemeği': {
+                                'genel': [
+                                    `Fine Dining Restoran:\n${userCity} şehrinde özel akşam yemeği menüleri ve şık sunumlarıyla dikkat çeken, romantik atmosferi olan popüler bir mekandır.`,
+                                    `Geleneksel Restoran:\n${userCity} şehrinde yerel mutfağın en güzel örneklerini sunan, otantik atmosferi olan popüler bir mekandır.`,
+                                    `Modern Restoran:\n${userCity} şehrinde çağdaş lezzetler ve yenilikçi mutfak teknikleriyle hazırlanan yemekler sunan popüler bir mekandır.`
+                                ]
+                            }
+                        }
+                    };
+                    
+                    // Şehir kontrolü ve öneri seçimi
+                    const cityLower = city.toLowerCase();
+                    let cityKey = 'genel'; // varsayılan
+                    
+                    if (cityLower.includes('sofya') || cityLower.includes('sofia') || cityLower.includes('bulgaristan') || cityLower.includes('bulgaria')) {
+                        cityKey = 'sofya';
+                    } else if (cityLower.includes('şişli') || cityLower.includes('nişantaşı') || cityLower.includes('harbiye') || cityLower.includes('teşvikiye') || cityLower.includes('maçka')) {
+                        cityKey = 'şişli';
+                    } else if (cityLower.includes('kadıköy') || cityLower.includes('moda') || cityLower.includes('fenerbahçe')) {
+                        cityKey = 'kadıköy';
+                    } else if (cityLower.includes('beşiktaş') || cityLower.includes('ortaköy') || cityLower.includes('bebek')) {
+                        cityKey = 'beşiktaş';
+                    } else {
+                        // Bilinmeyen şehir için genel öneriler
+                        cityKey = 'genel';
+                    }
+                    
+                    const cityRestaurants = fallbackRestaurants[cityKey] || fallbackRestaurants['genel'];
+                    const mealRestaurants = cityRestaurants[mealType] || cityRestaurants.kahvaltı;
+                    
+                    // Kullanıcının tercih ettiği mutfaklara göre öneri seç
+                    let suggestions = [];
+                    
+                    if (userCuisines && userCuisines.length > 0) {
+                        // Kullanıcının tercih ettiği mutfaklardan öneri seç
+                        for (const cuisine of userCuisines) {
+                            if (mealRestaurants[cuisine]) {
+                                suggestions = suggestions.concat(mealRestaurants[cuisine].slice(0, 2));
+                            }
+                        }
+                        
+                        // Eğer yeterli öneri yoksa genel kategoriden ekle
+                        if (suggestions.length < 3) {
+                            suggestions = suggestions.concat(mealRestaurants.genel.slice(0, 3 - suggestions.length));
+                        }
+                    } else {
+                        // Tercih yoksa genel kategoriden seç
+                        suggestions = mealRestaurants.genel.slice(0, 3);
+                    }
+                    
+                    // Benzersiz öneriler döndür
+                    const finalSuggestions = [...new Set(suggestions)].slice(0, 4);
+                    console.log('Final restoran önerileri:', finalSuggestions);
+                    return finalSuggestions;
+                    
+                } catch (error) {
+                    console.error('Restoran öneri hatası:', error);
+                    // Hata durumunda genel öneriler
+                    return [
+                        `${city} bölgesinde Popüler Restoran - Yerel Lezzetler`,
+                        `${city} bölgesinde Geleneksel Mutfak - Klasik Yemekler`,
+                        `${city} bölgesinde Modern Kafe - Çağdaş Seçenekler`,
+                        `${city} bölgesinde Aile Restoranı - Sıcak Ortam`
+                    ];
+                }
+            };
+            
+            // Generate AI tasks based on user data
+            const generateAITasks = (userData, dateKey) => {
+                if (!userData) return [];
+                
+                const targetDate = new Date(dateKey + 'T00:00:00');
+                const todayName = targetDate.toLocaleString('tr-TR', { weekday: 'long' });
+                const isWeekend = todayName === 'Cumartesi' || todayName === 'Pazar';
+                
+                let generatedTasks = [];
+                
+                // Yemek görevleri
+                if (userData.breakfastTime) {
+                    const suggestionType = userData.breakfastPreference || 'home';
+                    let suggestionDetail = suggestionType === 'home' 
+                        ? 'PlanIQ, kahvaltını evde yapacağını biliyor. Güne enerjik başlamak için omlet, menemen veya sağlıklı bir yulaf ezmesi deneyebilirsin!'
+                        : `PlanIQ, kahvaltını dışarıda yapacağını biliyor. ${userData.city || 'Yakınlarındaki'} bölgedeki popüler bir pastaneden poğaça/börek alabilir veya güzel bir serpme kahvaltı mekanını deneyebilirsin.`;
+                    
+                    generatedTasks.push({
+                        id: `ai_breakfast_${dateKey}`,
+                        time: userData.breakfastTime,
+                        name: "Kahvaltı",
+                        status: "Planlandı",
+                        isAISuggestion: true,
+                        suggestionDetail: suggestionDetail,
+                        suggestionType: suggestionType
+                    });
+                }
+                
+                if (userData.lunchTime) {
+                    const suggestionType = userData.lunchPreference || 'home';
+                    let suggestionDetail = suggestionType === 'home'
+                        ? 'Öğle yemeği için evdesin! Hızlı bir sandviç, pratik bir salata veya dünden kalan lezzetli bir yemeği ısıtabilirsin.'
+                        : `Öğle yemeği dışarıda! ${userData.city || 'Yakınlarındaki'} bölgedeki bir esnaf lokantası, kafe veya sevdiğin bir restorana ne dersin?`;
+                    
+                    generatedTasks.push({
+                        id: `ai_lunch_${dateKey}`,
+                        time: userData.lunchTime,
+                        name: "Öğle Yemeği",
+                        status: "Planlandı",
+                        isAISuggestion: true,
+                        suggestionDetail: suggestionDetail,
+                        suggestionType: suggestionType
+                    });
+                }
+                
+                if (userData.dinnerTime && userData.cuisines && userData.cuisines.length > 0) {
+                    let randomCuisine = userData.cuisines[Math.floor(Math.random() * userData.cuisines.length)];
+                    const suggestionType = userData.dinnerPreference || 'home';
+                    let suggestionDetail = '';
+                    
+                    if (suggestionType === 'outside') {
+                        suggestionDetail = `PlanIQ, ${randomCuisine} mutfağını sevdiğini fark etti. Akşam yemeği için ${userData.city || 'yakınlardaki'} bölgede popüler bir ${randomCuisine} restoranını keşfetmeye ne dersin?`;
+                    } else {
+                        suggestionDetail = `PlanIQ, ${randomCuisine} mutfağını sevdiğini fark etti. Akşam yemeğini evde yiyeceğini belirttin, güzel bir ${randomCuisine.toLowerCase()} yemeği yapmaya ne dersin?`;
+                    }
+                    
+                    generatedTasks.push({
+                        id: `ai_dinner_${dateKey}`,
+                        time: userData.dinnerTime,
+                        name: `Akşam Yemeği: ${randomCuisine}`,
+                        status: "Planlandı",
+                        isAISuggestion: true,
+                        suggestionDetail: suggestionDetail,
+                        suggestionType: suggestionType
+                    });
+                }
+                
+                // Rutin görevler
+                generatedTasks.push({
+                    id: `routine_wake_${dateKey}`,
+                    time: (isWeekend ? userData.weekendWakeTime : userData.weekdayWakeTime) || "08:00",
+                    name: "Uyan & Güne Başla",
+                    status: "Planlandı",
+                    isRoutine: true
+                });
+                
+                generatedTasks.push({
+                    id: `routine_sleep_${dateKey}`,
+                    time: (isWeekend ? userData.weekendSleepTime : userData.weekdaySleepTime) || "23:00",
+                    name: "Uyku Zamanı",
+                    status: "Planlandı",
+                    isRoutine: true
+                });
+                
+                // Aktivite önerisi
+                if (userData.activities && userData.activities.length > 0) {
+                    const randomActivity = userData.activities[Math.floor(Math.random() * userData.activities.length)];
+                    const dinnerTime = userData.dinnerTime || "19:00";
+                    let activityTime = addMinutesToTime(dinnerTime, 90);
+                    
+                    let suggestionDetail = '';
+                    if (randomActivity.includes('Spor')) {
+                        activityTime = addMinutesToTime(dinnerTime, -60);
+                        suggestionDetail = `PlanIQ, ${randomActivity} yapmayı sevdiğini biliyor. ${activityTime} civarı bunun için iyi bir zaman olabilir!`;
+                    } else if (randomActivity.includes('Sinema')) {
+                        suggestionDetail = `PlanIQ, sinemaya gitmeyi sevdiğini biliyor! Akşam için film önerisi almak ister misin?`;
+                    } else {
+                        suggestionDetail = `PlanIQ, ${randomActivity} yapmayı sevdiğini biliyor. Akşam yemeğinden sonra ${activityTime} civarı bunun için iyi bir zaman olabilir!`;
+                    }
+                    
+                    generatedTasks.push({
+                        id: `ai_activity_${dateKey}`,
+                        time: activityTime,
+                        name: `${randomActivity} Zamanı`,
+                        status: "Planlandı",
+                        isAISuggestion: true,
+                        suggestionDetail: suggestionDetail,
+                        suggestionType: 'activity'
+                    });
+                }
+                
+                return generatedTasks.sort((a, b) => a.time.localeCompare(b.time));
+            };
+            
+            useEffect(() => {
+                if (userData && selectedDateKey) {
+                    const aiTasks = generateAITasks(userData, selectedDateKey);
+                    
+                    // Schedule görevlerini ekle (eğer varsa)
+                    let scheduleTasks = [];
+                    if (userData.scheduleTasks) {
+                        const today = new Date(selectedDateKey + 'T00:00:00');
+                        const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+                        const todayName = dayNames[today.getDay()];
+                        
+                        scheduleTasks = userData.scheduleTasks.filter(task => 
+                            task.dayOfWeek === todayName && task.isRecurring
+                        ).map(task => ({
+                            ...task,
+                            id: `${task.id}-${selectedDateKey}` // Benzersiz ID için tarih ekle
+                        }));
+                    }
+                    
+                    // Tüm görevleri birleştir ve sırala
+                    const allTasks = [...aiTasks, ...scheduleTasks].sort((a, b) => a.time.localeCompare(b.time));
+                    setTasks(allTasks);
+                    setIsLoadingTasks(false);
+                }
+            }, [userData, selectedDateKey]);
+            
+            const toggleTaskStatus = (taskId, currentStatus) => {
+                setTasks(prevTasks => 
+                    prevTasks.map(task => 
+                        task.id === taskId 
+                            ? { ...task, status: currentStatus === 'Tamamlandı' ? 'Planlandı' : 'Tamamlandı' }
+                            : task
+                    )
+                );
+            };
+            
+            const deleteTask = (taskId) => {
+                setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+            };
+            
+            const addTask = async () => {
+                if (!newTask.time || !newTask.name) return;
+                
+                const newTaskObj = {
+                    id: `manual_${Date.now()}`,
+                    time: newTask.time,
+                    name: newTask.name,
+                    status: 'Planlandı',
+                    isAISuggestion: false,
+                    isRoutine: false
+                };
+                
+                setTasks(prevTasks => [...prevTasks, newTaskObj].sort((a, b) => a.time.localeCompare(b.time)));
+                setNewTask({ time: '', name: '' });
+                setIsAddingTask(false);
+            };
+            
+            const getStatusColor = (status) => {
+                if (isDark) {
+                    const colors = {
+                        'Tamamlandı': 'bg-green-900/50 text-green-300 border-green-700',
+                        'Planlandı': 'bg-blue-900/50 text-blue-300 border-blue-700',
+                        'Beklemede': 'bg-yellow-900/50 text-yellow-300 border-yellow-700'
+                    };
+                    return colors[status] || 'bg-gray-700 text-gray-300 border-gray-600';
+                } else {
+                    const colors = {
+                        'Tamamlandı': 'bg-green-100 text-green-700 border-green-300',
+                        'Planlandı': 'bg-blue-100 text-blue-700 border-blue-300',
+                        'Beklemede': 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                    };
+                    return colors[status] || 'bg-gray-100 text-gray-700 border-gray-300';
+                }
+            };
+            
+            const significantTasks = tasks.filter(task => !task.isRoutine);
+            const totalSignificantTasks = significantTasks.length;
+            const completedSignificantTasks = significantTasks.filter(t => t.status === 'Tamamlandı').length;
+            const completionPercentage = Math.round((completedSignificantTasks / (totalSignificantTasks || 1)) * 100);
+            
+            const fullDateString = formatFullDate(new Date(selectedDateKey + 'T00:00:00'));
+            
+            return React.createElement('div', {
+                className: `${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-2xl overflow-hidden transition-colors duration-300`
+            }, [
+                // Header
+                React.createElement('div', {
+                    key: 'header',
+                    className: `relative overflow-hidden ${isDark ? 'bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900' : 'bg-gradient-to-br from-purple-600 via-purple-500 to-pink-500'} p-6 sm:p-8 transition-all duration-300`
+                }, [
+                    React.createElement('div', {
+                        key: 'bubbles',
+                        className: "absolute inset-0 opacity-10"
+                    }, [
+                        React.createElement('div', {
+                            key: 'bubble1',
+                            className: "absolute top-0 left-0 w-64 h-64 bg-white rounded-full blur-3xl transform -translate-x-1/2 -translate-y-1/2"
+                        }),
+                        React.createElement('div', {
+                            key: 'bubble2',
+                            className: "absolute bottom-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl transform translate-x-1/2 translate-y-1/2"
+                        })
+                    ]),
+                    React.createElement('div', {
+                        key: 'content',
+                        className: "relative z-10"
+                    }, [
+                        React.createElement('div', {
+                            key: 'title',
+                            className: "flex items-center justify-between mb-4"
+                        }, [
+                            React.createElement('div', {
+                                key: 'date',
+                                className: ""
+                            }, [
+                                React.createElement('h2', {
+                                    key: 'day',
+                                    className: "text-4xl font-bold text-white"
+                                }, day),
+                                React.createElement('p', {
+                                    key: 'fullDate',
+                                    className: "text-white/80 font-medium"
+                                }, fullDateString)
+                            ]),
+                            React.createElement('div', {
+                                key: 'counter',
+                                className: `flex items-center gap-2 px-4 py-2 ${isDark ? 'bg-white/10' : 'bg-white/20'} backdrop-blur-sm rounded-full`
+                            }, [
+                                React.createElement('span', {
+                                    key: 'icon',
+                                    className: "text-white"
+                                }, '⏰'),
+                                React.createElement('span', {
+                                    key: 'count',
+                                    className: "text-white font-semibold text-sm"
+                                }, `${completedSignificantTasks}/${totalSignificantTasks} Görev`)
+                            ])
+                        ]),
+                        React.createElement('div', {
+                            key: 'progress',
+                            className: "flex items-center gap-3"
+                        }, [
+                            React.createElement('span', {
+                                key: 'status',
+                                className: `px-4 py-1.5 rounded-full text-sm font-semibold ${isDark ? 'bg-gray-700 text-gray-200 border-gray-600' : 'bg-blue-100 text-blue-700 border-blue-300'} shadow-lg border`
+                            }, totalSignificantTasks === 0 ? 'Rutin Gün' : totalSignificantTasks <= 2 ? 'Hafif Gün' : totalSignificantTasks <= 4 ? 'Normal Gün' : 'Yoğun Gün'),
+                            React.createElement('div', {
+                                key: 'bar',
+                                className: `flex-1 h-2.5 ${isDark ? 'bg-white/10' : 'bg-white/20'} rounded-full overflow-hidden backdrop-blur-sm`
+                            }, React.createElement('div', {
+                                className: "h-full bg-white transition-all duration-500 rounded-full",
+                                style: { width: `${completionPercentage}%` }
+                            })),
+                            React.createElement('span', {
+                                key: 'percentage',
+                                className: "text-white font-bold text-sm w-12 text-right"
+                            }, `%${completionPercentage}`)
+                        ])
+                    ])
+                ]),
+                
+                // Tasks List
+                React.createElement('div', {
+                    key: 'tasks',
+                    className: `p-6 space-y-3 max-h-96 overflow-y-auto ${isDark ? 'bg-gray-800' : ''}`
+                }, [
+                    isLoadingTasks ? React.createElement('div', {
+                        key: 'loading',
+                        className: "flex justify-center items-center py-10"
+                    }, React.createElement('div', {
+                        className: `w-8 h-8 ${isDark ? 'text-purple-300' : 'text-purple-600'} animate-spin`
+                    }, '⏳')) : null,
+                    
+                    !isLoadingTasks && tasks.length === 0 ? React.createElement('p', {
+                        key: 'empty',
+                        className: `text-center py-10 ${isDark ? 'text-gray-400' : 'text-gray-500'}`
+                    }, 'Bu tarih için planlanmış görev yok.') : null,
+                    
+                    !isLoadingTasks && tasks.map((task) => 
+                        React.createElement('div', {
+                            key: task.id,
+                            className: `p-4 rounded-xl border-2 ${getStatusColor(task.status)} backdrop-blur-sm transition-all hover:scale-102 hover:shadow-md ${task.isAISuggestion ? 'cursor-pointer' : ''}`,
+                            onClick: () => task.isAISuggestion && setModalTask(task)
+                        }, [
+                            React.createElement('div', {
+                                key: 'content',
+                                className: "flex items-center justify-between"
+                            }, [
+                                React.createElement('div', {
+                                    key: 'left',
+                                    className: "flex items-center gap-3 flex-1"
+                                }, [
+                                    React.createElement('button', {
+                                        key: 'toggle',
+                                        onClick: (e) => {
+                                            e.stopPropagation();
+                                            toggleTaskStatus(task.id, task.status);
+                                        },
+                                        className: "flex-shrink-0 transition-transform hover:scale-110"
+                                    }, task.status === 'Tamamlandı' ? '✅' : '⭕'),
+                                    React.createElement('div', {
+                                        key: 'info',
+                                        className: "flex-1 min-w-0"
+                                    }, [
+                                        React.createElement('div', {
+                                            key: 'time',
+                                            className: `flex items-center gap-2 mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`
+                                        }, [
+                                            React.createElement('span', {
+                                                key: 'clock',
+                                                className: "text-sm"
+                                            }, '⏰'),
+                                            React.createElement('span', {
+                                                key: 'time',
+                                                className: "text-sm font-semibold"
+                                            }, task.time),
+                                            task.isAISuggestion && React.createElement('span', {
+                                                key: 'ai',
+                                                className: "text-sm"
+                                            }, '✨')
+                                        ]),
+                                        React.createElement('div', {
+                                            key: 'name',
+                                            className: "flex items-center gap-2"
+                                        }, [
+                                            task.category === 'schedule' && React.createElement('span', {
+                                                key: 'icon',
+                                                className: "text-sm"
+                                            }, task.type === 'school' ? '🎓' : '💼'),
+                                            React.createElement('p', {
+                                                key: 'text',
+                                                className: `font-medium truncate ${isDark ? 'text-gray-100' : 'text-gray-800'} ${task.status === 'Tamamlandı' ? 'line-through opacity-60' : ''}`
+                                            }, task.name),
+                                            task.category === 'schedule' && React.createElement('span', {
+                                                key: 'badge',
+                                                className: `px-2 py-0.5 text-xs rounded-full font-medium ${isDark ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-800'}`
+                                            }, 'Sabit')
+                                        ])
+                                    ])
+                                ]),
+                                task.category !== 'schedule' && React.createElement('button', {
+                                    key: 'delete',
+                                    onClick: (e) => {
+                                        e.stopPropagation();
+                                        deleteTask(task.id);
+                                    },
+                                    className: `ml-2 p-2 flex-shrink-0 ${isDark ? 'hover:bg-red-900/50' : 'hover:bg-red-100'} rounded-lg transition-colors`
+                                }, '🗑️')
+                            ])
+                        ])
+                    )
+                ]),
+                
+                // Add Task Form
+                React.createElement('div', {
+                    key: 'addForm',
+                    className: `p-6 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}`
+                }, isAddingTask ? [
+                    React.createElement('div', {
+                        key: 'form',
+                        className: "space-y-3"
+                    }, [
+                        React.createElement('input', {
+                            key: 'time',
+                            type: "time",
+                            value: newTask.time,
+                            onChange: (e) => setNewTask({ ...newTask, time: e.target.value }),
+                            className: `w-full px-4 py-2 rounded-lg border-2 ${isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-800'}`
+                        }),
+                        React.createElement('input', {
+                            key: 'name',
+                            type: "text",
+                            placeholder: "Görev adı...",
+                            value: newTask.name,
+                            onChange: (e) => setNewTask({ ...newTask, name: e.target.value }),
+                            className: `w-full px-4 py-2 rounded-lg border-2 ${isDark ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-800'}`
+                        }),
+                        React.createElement('div', {
+                            key: 'buttons',
+                            className: "flex gap-2"
+                        }, [
+                            React.createElement('button', {
+                                key: 'cancel',
+                                onClick: () => setIsAddingTask(false),
+                                className: `w-full py-2 px-4 rounded-lg ${isDark ? 'bg-gray-600 hover:bg-gray-500 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} text-sm font-semibold transition-colors`
+                            }, 'İptal'),
+                            React.createElement('button', {
+                                key: 'add',
+                                onClick: addTask,
+                                className: "w-full py-2 px-4 rounded-lg bg-purple-600 text-white hover:bg-purple-700 text-sm font-semibold transition-colors"
+                            }, 'Ekle')
+                        ])
+                    ])
+                ] : React.createElement('button', {
+                    key: 'addButton',
+                    onClick: () => setIsAddingTask(true),
+                    className: `w-full flex items-center justify-center gap-2 py-3 border-2 ${isDark ? 'border-purple-700 text-purple-300 hover:bg-purple-900/50' : 'border-dashed border-purple-300 text-purple-600 hover:bg-purple-50'} rounded-xl transition-all`
+                }, ['➕', 'Yeni Görev Ekle'])),
+                
+                // AI Suggestion Modal
+                modalTask && React.createElement('div', {
+                    key: 'modal',
+                    className: "fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn",
+                    onClick: () => {
+                        setModalTask(null);
+                        setModalContentStage('initial');
+                        setAiSuggestionContent(null);
+                    }
+                }, React.createElement('div', {
+                    className: `rounded-3xl shadow-2xl overflow-hidden ${isDark ? 'bg-gray-800' : 'bg-white'} max-w-lg w-full transform transition-all animate-slideUp`,
+                    onClick: (e) => e.stopPropagation()
+                }, [
+                    React.createElement('div', {
+                        key: 'modalHeader',
+                        className: `relative overflow-hidden ${isDark ? 'bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900' : 'bg-gradient-to-br from-purple-600 via-purple-500 to-pink-500'} p-6`
+                    }, [
+                        React.createElement('div', {
+                            key: 'title',
+                            className: "flex items-center gap-3"
+                        }, ['✨', React.createElement('h3', {
+                            key: 'text',
+                            className: "text-2xl font-bold text-white"
+                        }, 'PlanIQ Önerisi')])
+                    ]),
+                    React.createElement('div', {
+                        key: 'modalContent',
+                        className: "p-6 space-y-4 min-h-[150px]"
+                    }, [
+                        React.createElement('p', {
+                            key: 'taskName',
+                            className: `text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`
+                        }, modalTask.name),
+                        
+                        // State makinesi ile içerik kontrolü
+                        modalContentStage === 'loading' ? React.createElement('div', {
+                            key: 'loading',
+                            className: "flex items-center justify-center py-8"
+                        }, [
+                            React.createElement('div', {
+                                key: 'spinner',
+                                className: "animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"
+                            }),
+                            React.createElement('span', {
+                                key: 'text',
+                                className: `ml-3 ${isDark ? 'text-white' : 'text-gray-700'}`
+                            }, 'AI önerileri hazırlanıyor...')
+                        ]) : modalContentStage === 'recipe' ? React.createElement('div', {
+                            key: 'recipeContent',
+                            className: "space-y-4"
+                        }, [
+                            React.createElement('h4', {
+                                key: 'title',
+                                className: `text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'} flex items-center gap-2`
+                            }, ['🍳', 'Tarif Önerileri']),
+                            React.createElement('div', {
+                                key: 'suggestions',
+                                className: "space-y-4"
+                            }, aiSuggestionContent && Array.isArray(aiSuggestionContent) ? aiSuggestionContent.map((recipe, index) => {
+                                const [name, description] = recipe.split(':\n');
+                                return React.createElement('div', {
+                                    key: index,
+                                    className: `p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'header',
+                                        className: "flex items-center gap-2 mb-2"
+                                    }, [
+                                        React.createElement('span', { key: 'icon' }, '👨‍🍳'),
+                                        React.createElement('h4', {
+                                            key: 'name',
+                                            className: `${isDark ? 'text-white' : 'text-gray-800'} font-bold text-lg`
+                                        }, name)
+                                    ]),
+                                    React.createElement('p', {
+                                        key: 'description',
+                                        className: `${isDark ? 'text-gray-300' : 'text-gray-600'} text-sm leading-relaxed`
+                                    }, description)
+                                ]);
+                            }) : [])
+                        ]) : modalContentStage === 'restaurant' ? React.createElement('div', {
+                            key: 'restaurantContent',
+                            className: "space-y-4"
+                        }, [
+                            React.createElement('h4', {
+                                key: 'title',
+                                className: `text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'} flex items-center gap-2`
+                            }, ['🍽️', 'Restoran Önerileri']),
+                            React.createElement('div', {
+                                key: 'suggestions',
+                                className: "space-y-4"
+                            }, aiSuggestionContent && Array.isArray(aiSuggestionContent) ? aiSuggestionContent.map((restaurant, index) => {
+                                const [name, description] = restaurant.split(':\n');
+                                return React.createElement('div', {
+                                    key: index,
+                                    className: `p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'header',
+                                        className: "flex items-center gap-2 mb-2"
+                                    }, [
+                                        React.createElement('span', { key: 'icon' }, '📍'),
+                                        React.createElement('h4', {
+                                            key: 'name',
+                                            className: `${isDark ? 'text-white' : 'text-gray-800'} font-bold text-lg`
+                                        }, name)
+                                    ]),
+                                    React.createElement('p', {
+                                        key: 'description',
+                                        className: `${isDark ? 'text-gray-300' : 'text-gray-600'} text-sm leading-relaxed`
+                                    }, description)
+                                ]);
+                            }) : [])
+                        ]) : React.createElement('p', {
+                            key: 'suggestion',
+                            className: `${isDark ? 'text-gray-300' : 'text-gray-700'}`
+                        }, modalTask.suggestionDetail || "PlanIQ bu aktiviteyi senin için önerdi!")
+                    ]),
+                    React.createElement('div', {
+                        key: 'modalFooter',
+                        className: `p-4 border-t ${isDark ? 'border-gray-700' : 'border-gray-100'} flex flex-wrap justify-between gap-2`
+                    }, [
+                        // State makinesi ile buton kontrolü
+                        modalContentStage === 'initial' ? React.createElement('div', {
+                            key: 'actions',
+                            className: "flex flex-wrap gap-2"
+                        }, [
+                            // Tarif öner butonu (sadece evde yemek için)
+                            modalTask.suggestionType === 'home' && (modalTask.name.includes('Kahvaltı') || modalTask.name.includes('Öğle') || modalTask.name.includes('Akşam')) && React.createElement('button', {
+                                key: 'recipe',
+                                onClick: async () => {
+                                    setModalContentStage('loading');
+                                    const mealType = modalTask.name.includes('Kahvaltı') ? 'kahvaltı' : modalTask.name.includes('Öğle') ? 'öğle yemeği' : 'akşam yemeği';
+                                    const cuisine = modalTask.name.includes(':') ? modalTask.name.split(': ')[1] : 'genel';
+                                    const recipeSuggestions = await generateRecipeSuggestions(mealType, cuisine, userData.cuisines || []);
+                                    
+                                    setAiSuggestionContent(recipeSuggestions);
+                                    setModalContentStage('recipe');
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-green-100 hover:bg-green-200 text-green-800'}`
+                            }, ['🍳', 'Tarif Öner']),
+                            
+                            // Dışarıda yeme butonu (sadece evde yemek için)
+                            modalTask.suggestionType === 'home' && (modalTask.name.includes('Kahvaltı') || modalTask.name.includes('Öğle') || modalTask.name.includes('Akşam')) && React.createElement('button', {
+                                key: 'outside',
+                                onClick: async () => {
+                                    setModalContentStage('loading');
+                                    const mealType = modalTask.name.includes('Kahvaltı') ? 'kahvaltı' : modalTask.name.includes('Öğle') ? 'öğle yemeği' : 'akşam yemeği';
+                                    console.log('Restoran önerileri isteniyor:', { mealType, city: userData.city, cuisines: userData.cuisines });
+                                    
+                                    const restaurantSuggestions = await generateRestaurantSuggestions(mealType, userData.city || '', userData.cuisines || []);
+                                    console.log('Restoran önerileri geldi:', restaurantSuggestions);
+                                    
+                                    setAiSuggestionContent(restaurantSuggestions);
+                                    setModalContentStage('restaurant');
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-100 hover:bg-blue-200 text-blue-800'}`
+                            }, ['🍽️', 'Dışarıda Ye'])
+                        ]) : React.createElement('div', {
+                            key: 'actions',
+                            className: "flex flex-wrap gap-2"
+                        }, [
+                            // Geri butonu
+                            React.createElement('button', {
+                                key: 'back',
+                                onClick: () => {
+                                    setModalContentStage('initial');
+                                    setAiSuggestionContent(null);
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-gray-600 hover:bg-gray-500 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`
+                            }, ['←', 'Geri'])
+                        ]),
+                        
+                        // Sağ taraf - Kapat butonu
+                        React.createElement('div', {
+                            key: 'buttons',
+                            className: "flex gap-2"
+                        }, [
+                            React.createElement('button', {
+                                key: 'details',
+                                onClick: () => {
+                                    // Detayları göster
+                                    alert('Detaylar yakında eklenecek!');
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`
+                            }, ['📋', 'Detayları Gör']),
+                            React.createElement('button', {
+                                key: 'map',
+                                onClick: () => {
+                                    // Haritada göster
+                                    alert('Harita özelliği yakında eklenecek!');
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-green-600 hover:bg-green-500 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`
+                            }, ['🗺️', 'Haritada Göster']),
+                            React.createElement('button', {
+                                key: 'close',
+                                onClick: () => {
+                                    setModalTask(null);
+                                    setAiSuggestionContent(null);
+                                },
+                                className: `py-2 px-4 rounded-lg font-semibold transition-colors flex items-center gap-2 text-sm ${isDark ? 'bg-gray-600 hover:bg-gray-500 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`
+                            }, ['✅', 'Anladım'])
+                        ])
+                    ])
+                ]))
+            ]);
+        };
+        
+        // Onboarding Component (full version)
+        const Onboarding = ({ onComplete }) => {
+            const [step, setStep] = useState(0);
+            const [formData, setFormData] = useState({
+                name: '',
+                email: '',
+                password: '',
+                city: '',
+                friends: [''],
+                cuisines: [],
+                drinks: [],
+                activities: [],
+                movieGenres: [],
+                workStyle: '',
+                timePreference: '',
+                purpose: [],
+                weekdayWakeTime: '',
+                weekdaySleepTime: '',
+                weekendWakeTime: '',
+                weekendSleepTime: '',
+                breakfastTime: '',
+                lunchTime: '',
+                dinnerTime: '',
+                breakfastPreference: '',
+                lunchPreference: '',
+                dinnerPreference: '',
+                schedule: {
+                    Pazartesi: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Salı: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Çarşamba: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Perşembe: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Cuma: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Cumartesi: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' },
+                    Pazar: { active: false, schoolStart: '', schoolEnd: '', workStart: '', workEnd: '' }
+                },
+                habitWater: true,
+                habitPosture: true,
+                habitWalk: true
+            });
+            
+            const updateField = (field, value) => {
+                setFormData(prev => ({ ...prev, [field]: value }));
+            };
+            
+            const updateScheduleDay = (day, field, value) => {
+                setFormData(prev => ({
+                    ...prev,
+                    schedule: {
+                        ...prev.schedule,
+                        [day]: { ...prev.schedule[day], [field]: value }
+                    }
+                }));
+            };
+            
+            const togglePurpose = (purpose) => {
+                const array = formData.purpose;
+                if (array.includes(purpose)) {
+                    updateField('purpose', array.filter(p => p !== purpose));
+                } else {
+                    updateField('purpose', [...array, purpose]);
+                }
+            };
+            
+            const addFriend = () => {
+                setFormData(prev => ({ ...prev, friends: [...prev.friends, ''] }));
+            };
+            
+            const updateFriend = (index, value) => {
+                const newFriends = [...formData.friends];
+                newFriends[index] = value;
+                setFormData(prev => ({ ...prev, friends: newFriends }));
+            };
+            
+            const removeFriend = (index) => {
+                const newFriends = formData.friends.filter((_, i) => i !== index);
+                setFormData(prev => ({ ...prev, friends: newFriends }));
+            };
+            
+            const toggleArrayItem = (field, item) => {
+                const array = formData[field];
+                if (array.includes(item)) {
+                    updateField(field, array.filter(i => i !== item));
+                } else {
+                    updateField(field, [...array, item]);
+                }
+            };
+            
+            const nextStep = () => setStep(step + 1);
+            const prevStep = () => setStep(step - 1);
+            
+            const canProceed = () => {
+                switch (step) {
+                    case 0: return formData.name && formData.email && formData.password;
+                    case 1: return formData.city && formData.friends.some(f => f.trim());
+                    case 2: return formData.cuisines.length > 0 && formData.drinks.length > 0;
+                    case 3: return formData.activities.length > 0 && formData.workStyle;
+                    case 4: return formData.timePreference && formData.purpose.length > 0;
+                    case 5: return formData.weekdayWakeTime && formData.weekdaySleepTime && formData.weekendWakeTime && formData.weekendSleepTime;
+                    case 6: return formData.breakfastTime && formData.lunchTime && formData.dinnerTime && formData.breakfastPreference && formData.lunchPreference && formData.dinnerPreference;
+                    case 7: 
+                        if (formData.purpose.length === 0) return true;
+                        const activeDays = Object.values(formData.schedule).filter(day => day.active);
+                        if (activeDays.length === 0) return true;
+                        return activeDays.every(day => {
+                            const hasSchool = formData.purpose.includes('school');
+                            const hasWork = formData.purpose.includes('work');
+                            if (hasSchool && hasWork) {
+                                return (day.schoolStart && day.schoolEnd) || (day.workStart && day.workEnd);
+                            } else if (hasSchool) {
+                                return day.schoolStart && day.schoolEnd;
+                            } else if (hasWork) {
+                                return day.workStart && day.workEnd;
+                            }
+                            return true;
+                        });
+                    default: return true;
+                }
+            };
+            
+            const handleComplete = async () => {
+                try {
+                    // Firebase olmadan da çalışsın
+                    console.log('Onboarding tamamlanıyor...', formData);
+                    
+                    // Demo user ID oluştur
+                    const userId = 'demo-user-' + Date.now();
+                    
+                    // Local storage'a kaydet
+                    localStorage.setItem('planiq_user', JSON.stringify(formData));
+                    localStorage.setItem('planiq_userId', userId);
+                    
+                    onComplete(formData, userId);
+                } catch (error) {
+                    console.error('Kayıt hatası:', error);
+                    // Hata durumunda da devam et
+                    const userId = 'demo-user-' + Date.now();
+                    localStorage.setItem('planiq_user', JSON.stringify(formData));
+                    localStorage.setItem('planiq_userId', userId);
+                    onComplete(formData, userId);
+                }
+            };
+            
+            const steps = [
+                // Step 0: Temel Bilgiler
+                React.createElement('div', { key: 'step0', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Hoş Geldin! 👋'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Hadi seni daha yakından tanıyalım')
+                    ]),
+                    React.createElement('div', { key: 'name' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Ad Soyad'),
+                        React.createElement('input', {
+                            key: 'input',
+                            type: "text",
+                            value: formData.name,
+                            onChange: (e) => updateField('name', e.target.value),
+                            placeholder: "Adın nedir?",
+                            className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                        })
+                    ]),
+                    React.createElement('div', { key: 'email' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'E-posta'),
+                        React.createElement('input', {
+                            key: 'input',
+                            type: "email",
+                            value: formData.email,
+                            onChange: (e) => updateField('email', e.target.value),
+                            placeholder: "E-posta adresin",
+                            className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                        })
+                    ]),
+                    React.createElement('div', { key: 'password' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Şifre'),
+                        React.createElement('input', {
+                            key: 'input',
+                            type: "password",
+                            value: formData.password,
+                            onChange: (e) => updateField('password', e.target.value),
+                            placeholder: "Güvenli bir şifre",
+                            className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                        })
+                    ])
+                ]),
+                
+                // Step 1: Sosyal Çevre
+                React.createElement('div', { key: 'step1', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Sosyal Çevren 🌍'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Seninle vakit geçirebileceğimiz arkadaşların')
+                    ]),
+                    React.createElement('div', { key: 'city' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'İlçe / Şehir'),
+                        React.createElement('input', {
+                            key: 'input',
+                            type: "text",
+                            value: formData.city,
+                            onChange: (e) => updateField('city', e.target.value),
+                            placeholder: "örn: Beşiktaş / İstanbul",
+                            className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                        })
+                    ]),
+                    React.createElement('div', { key: 'friends' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Yakın Arkadaşların'),
+                        React.createElement('div', { key: 'friendsList', className: "space-y-3" }, 
+                            formData.friends.map((friend, index) => 
+                                React.createElement('div', { key: index, className: "flex gap-2" }, [
+                                    React.createElement('input', {
+                                        key: 'input',
+                                        type: "text",
+                                        value: friend,
+                                        onChange: (e) => updateFriend(index, e.target.value),
+                                        placeholder: `Arkadaş ${index + 1}`,
+                                        className: "flex-1 px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                                    }),
+                                    formData.friends.length > 1 && React.createElement('button', {
+                                        key: 'remove',
+                                        onClick: () => removeFriend(index),
+                                        className: "p-3 bg-red-600/30 text-white rounded-xl hover:bg-red-700/50 transition-all"
+                                    }, '❌')
+                                ])
+                            )
+                        ),
+                        React.createElement('button', {
+                            key: 'addFriend',
+                            onClick: addFriend,
+                            className: "w-full py-3 border-2 border-dashed border-white/40 text-white rounded-xl hover:border-white/70 hover:bg-white/10 transition-all flex items-center justify-center gap-2 text-lg"
+                        }, ['➕', 'Arkadaş Ekle'])
+                    ])
+                ]),
+                
+                // Step 2: Yemek & İçecek
+                React.createElement('div', { key: 'step2', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Damak Tadın 🍽️'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Sevdiğin mutfakları ve içecekleri seç')
+                    ]),
+                    React.createElement('div', { key: 'cuisines' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Sevdiğin Mutfaklar'),
+                        React.createElement('div', { key: 'grid', className: "grid grid-cols-2 sm:grid-cols-4 gap-3" }, 
+                            ['İtalyan', 'Uzak Doğu', 'Türk Mutfağı', 'Meksika 🌮', 'Hint 🍛', 'Fast Food', 'Vejetaryen', 'Deniz Ürünleri'].map(cuisine => 
+                                React.createElement('button', {
+                                    key: cuisine,
+                                    onClick: () => toggleArrayItem('cuisines', cuisine),
+                                    className: `py-3 px-2 text-center rounded-xl border-2 transition-all transform hover:scale-105 font-semibold ${formData.cuisines.includes(cuisine) ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, cuisine)
+                            )
+                        )
+                    ]),
+                    React.createElement('div', { key: 'drinks' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'İçecek Tercihin'),
+                        React.createElement('div', { key: 'grid', className: "grid grid-cols-2 gap-3" }, 
+                            ['Kahve ☕', 'Çay 🍵', 'Smoothie 🥤', 'Kokteyl 🍹'].map(drink => 
+                                React.createElement('button', {
+                                    key: drink,
+                                    onClick: () => toggleArrayItem('drinks', drink),
+                                    className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 text-lg font-semibold ${formData.drinks.includes(drink) ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, drink)
+                            )
+                        )
+                    ])
+                ]),
+                
+                // Step 3: Aktivite & Film & Çalışma
+                React.createElement('div', { key: 'step3', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Aktiviteler & Zevklerin 🎬'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Boş zamanlarında ne yaparsın, ne izlersin?')
+                    ]),
+                    React.createElement('div', { key: 'activities' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Sosyal Aktiviteler'),
+                        React.createElement('div', { key: 'grid', className: "grid grid-cols-2 gap-3" }, 
+                            ['Sinema 🎬', 'Kafe ☕', 'Restoran 🍽️', 'Spor 🏃', 'Kitap 📚', 'Alışveriş 🛍️'].map(activity => 
+                                React.createElement('button', {
+                                    key: activity,
+                                    onClick: () => toggleArrayItem('activities', activity),
+                                    className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 text-lg font-semibold ${formData.activities.includes(activity) ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, activity)
+                            )
+                        )
+                    ]),
+                    React.createElement('div', { key: 'movieGenres' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Sevdiğin Film Türleri (İsteğe Bağlı)'),
+                        React.createElement('div', { key: 'grid', className: "grid grid-cols-2 sm:grid-cols-4 gap-3" }, 
+                            ['Aksiyon', 'Komedi', 'Dram', 'Bilim Kurgu', 'Korku', 'Romantik', 'Animasyon', 'Belgesel'].map(genre => 
+                                React.createElement('button', {
+                                    key: genre,
+                                    onClick: () => toggleArrayItem('movieGenres', genre),
+                                    className: `py-2 px-3 text-center rounded-xl border-2 transition-all transform hover:scale-105 font-semibold ${formData.movieGenres.includes(genre) ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, genre)
+                            )
+                        )
+                    ]),
+                    React.createElement('div', { key: 'workStyle' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Çalışma Tarzın'),
+                        React.createElement('div', { key: 'grid', className: "space-y-3" }, 
+                            [
+                                { id: 'pomodoro', label: 'Pomodoro (25 dk çalış, 5 dk mola)', emoji: '🍅' },
+                                { id: 'long', label: 'Uzun Oturumlar (1-2 saat)', emoji: '⏰' },
+                                { id: 'flexible', label: 'Esnek / İstediğim gibi', emoji: '🎨' }
+                            ].map(style => 
+                                React.createElement('button', {
+                                    key: style.id,
+                                    onClick: () => updateField('workStyle', style.id),
+                                    className: `w-full py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 text-left text-lg font-semibold ${formData.workStyle === style.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, [
+                                    React.createElement('span', { key: 'emoji', className: "mr-2" }, style.emoji),
+                                    style.label
+                                ])
+                            )
+                        )
+                    ])
+                ]),
+                
+                // Step 4: Time & Purpose
+                React.createElement('div', { key: 'step4', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Amacın Nedir? 🎯'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'PlanIQ\'u neden kullanıyorsun?')
+                    ]),
+                    React.createElement('div', { key: 'timePref' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Ne Zaman Daha Verimlisin?'),
+                        React.createElement('div', { key: 'grid', className: "grid grid-cols-2 gap-3" }, 
+                            [
+                                { id: 'morning', label: 'Sabah Kişisi', emoji: '🌅' },
+                                { id: 'night', label: 'Gece Kişisi', emoji: '🌙' }
+                            ].map(time => 
+                                React.createElement('button', {
+                                    key: time.id,
+                                    onClick: () => updateField('timePreference', time.id),
+                                    className: `py-4 px-4 rounded-xl border-2 transition-all transform hover:scale-105 text-lg font-semibold ${formData.timePreference === time.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, [
+                                    React.createElement('div', { key: 'emoji', className: "text-3xl mb-2" }, time.emoji),
+                                    time.label
+                                ])
+                            )
+                        )
+                    ]),
+                    React.createElement('div', { key: 'purpose' }, [
+                        React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-3" }, 'Amaçların (Birden fazla seçebilirsin)'),
+                        React.createElement('div', { key: 'grid', className: "space-y-3" }, 
+                            [
+                                { id: 'school', label: 'Okul / Üniversite', emoji: '🎓', desc: 'Dersler, ödevler, sınavlar için' },
+                                { id: 'work', label: 'İş / Kariyer', emoji: '💼', desc: 'Mesai, projeler, toplantılar için' },
+                                { id: 'personal', label: 'Kişisel Gelişim', emoji: '🌟', desc: 'Hobiler, spor, öğrenme için' },
+                                { id: 'social', label: 'Sosyal Yaşam', emoji: '👥', desc: 'Arkadaşlar, aile, sosyal aktiviteler için' }
+                            ].map(purpose => 
+                                React.createElement('button', {
+                                    key: purpose.id,
+                                    onClick: () => togglePurpose(purpose.id),
+                                    className: `w-full p-4 rounded-xl border-2 transition-all transform hover:scale-105 text-left ${formData.purpose.includes(purpose.id) ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                }, [
+                                    React.createElement('div', { key: 'content', className: "flex items-center gap-4" }, [
+                                        React.createElement('span', { key: 'icon', className: "text-3xl" }, purpose.emoji),
+                                        React.createElement('div', { key: 'text' }, [
+                                            React.createElement('div', { key: 'label', className: "text-xl font-bold" }, purpose.label),
+                                            React.createElement('div', { key: 'desc', className: "text-sm opacity-80" }, purpose.desc)
+                                        ])
+                                    ])
+                                ])
+                            )
+                        )
+                    ])
+                ]),
+                
+                // Step 5: Sleep Routines
+                React.createElement('div', { key: 'step5', className: "space-y-6" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Uyku Rutinlerin 😴'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Genel uyku/uyanıklık saatlerin nedir?')
+                    ]),
+                    React.createElement('div', { key: 'sleep', className: "grid grid-cols-1 sm:grid-cols-2 gap-4" }, [
+                        React.createElement('div', { key: 'weekdayWake' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Hafta İçi Uyanma ☀️'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.weekdayWakeTime,
+                                onChange: (e) => updateField('weekdayWakeTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'weekdaySleep' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Hafta İçi Uyuma 🌙'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.weekdaySleepTime,
+                                onChange: (e) => updateField('weekdaySleepTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'weekendWake' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Hafta Sonu Uyanma ☀️'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.weekendWakeTime,
+                                onChange: (e) => updateField('weekendWakeTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'weekendSleep' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Hafta Sonu Uyuma 🌙'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.weekendSleepTime,
+                                onChange: (e) => updateField('weekendSleepTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ])
+                    ])
+                ]),
+                
+                // Step 6: Yemek Rutinleri
+                React.createElement('div', { key: 'step6', className: "space-y-5" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Yemek Zamanların 🍳'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 'Genellikle ne zaman yemek yersin ve nerede?')
+                    ]),
+                    React.createElement('div', { key: 'meals', className: "grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4" }, [
+                        React.createElement('div', { key: 'breakfast' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Kahvaltı 🥐'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.breakfastTime,
+                                onChange: (e) => updateField('breakfastTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'lunch' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Öğle Yemeği 🥪'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.lunchTime,
+                                onChange: (e) => updateField('lunchTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'dinner' }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white mb-2" }, 'Akşam Yemeği 🍝'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "time",
+                                value: formData.dinnerTime,
+                                onChange: (e) => updateField('dinnerTime', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ])
+                    ]),
+                    React.createElement('div', { key: 'preferences', className: "grid grid-cols-1 md:grid-cols-3 gap-5" }, [
+                        React.createElement('div', { key: 'breakfastPref', className: "space-y-3" }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white text-center" }, 'Kahvaltı Yerin?'),
+                            React.createElement('div', { key: 'grid', className: "flex flex-col gap-2" }, 
+                                [
+                                    { id: 'home', label: 'Evde', icon: '🏠' },
+                                    { id: 'outside', label: 'Dışarıda', icon: '📍' }
+                                ].map(pref => 
+                                    React.createElement('button', {
+                                        key: pref.id,
+                                        onClick: () => updateField('breakfastPreference', pref.id),
+                                        className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 flex items-center justify-center text-lg font-semibold ${formData.breakfastPreference === pref.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                    }, [pref.icon, ' ', pref.label])
+                                )
+                            )
+                        ]),
+                        React.createElement('div', { key: 'lunchPref', className: "space-y-3" }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white text-center" }, 'Öğle Yemeği Yerin?'),
+                            React.createElement('div', { key: 'grid', className: "flex flex-col gap-2" }, 
+                                [
+                                    { id: 'home', label: 'Evde', icon: '🏠' },
+                                    { id: 'outside', label: 'Dışarıda', icon: '📍' }
+                                ].map(pref => 
+                                    React.createElement('button', {
+                                        key: pref.id,
+                                        onClick: () => updateField('lunchPreference', pref.id),
+                                        className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 flex items-center justify-center text-lg font-semibold ${formData.lunchPreference === pref.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                    }, [pref.icon, ' ', pref.label])
+                                )
+                            )
+                        ]),
+                        React.createElement('div', { key: 'dinnerPref', className: "space-y-3" }, [
+                            React.createElement('label', { key: 'label', className: "block text-base font-bold text-white text-center" }, 'Akşam Yemeği Yerin?'),
+                            React.createElement('div', { key: 'grid', className: "flex flex-col gap-2" }, 
+                                [
+                                    { id: 'home', label: 'Evde', icon: '🏠' },
+                                    { id: 'outside', label: 'Dışarıda', icon: '📍' }
+                                ].map(pref => 
+                                    React.createElement('button', {
+                                        key: pref.id,
+                                        onClick: () => updateField('dinnerPreference', pref.id),
+                                        className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 flex items-center justify-center text-lg font-semibold ${formData.dinnerPreference === pref.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                    }, [pref.icon, ' ', pref.label])
+                                )
+                            )
+                        ])
+                    ])
+                ]),
+                
+                // Step 7: Haftalık Program
+                React.createElement('div', { key: 'step7', className: "space-y-5" }, [
+                    React.createElement('div', { key: 'header', className: "text-center mb-8" }, [
+                        React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-3 tracking-tight" }, 'Haftalık Programın 🗓️'),
+                        React.createElement('p', { key: 'subtitle', className: "text-white/80 text-lg" }, 
+                            formData.purpose.includes('school') && formData.purpose.includes('work') 
+                                ? 'Sabit ders ve mesai gün/saatlerini gir.' 
+                                : formData.purpose.includes('school') 
+                                    ? 'Sabit ders gün ve saatlerini gir.'
+                                    : formData.purpose.includes('work')
+                                        ? 'Sabit mesai gün ve saatlerini gir.'
+                                        : 'Sabit program gün ve saatlerini gir.'
+                        )
+                    ]),
+                    React.createElement('div', { key: 'schedule', className: "space-y-4" }, 
+                        ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'].map(day => {
+                            const dayData = formData.schedule[day];
+                            return React.createElement('div', {
+                                key: day,
+                                className: `p-4 rounded-xl transition-all ${dayData.active ? 'bg-white/20' : 'bg-white/10'}`
+                            }, [
+                                React.createElement('div', {
+                                    key: 'header',
+                                    className: "flex items-center justify-between"
+                                }, [
+                                    React.createElement('label', {
+                                        key: 'label',
+                                        htmlFor: `toggle-${day}`,
+                                        className: "text-lg font-semibold text-white cursor-pointer"
+                                    }, day),
+                                    React.createElement('button', {
+                                        key: 'toggle',
+                                        id: `toggle-${day}`,
+                                        onClick: () => updateScheduleDay(day, 'active', !dayData.active),
+                                        className: "cursor-pointer"
+                                    }, dayData.active ? '🔘' : '⚪')
+                                ]),
+                                dayData.active && React.createElement('div', {
+                                    key: 'times',
+                                    className: "space-y-4 mt-4"
+                                }, [
+                                    // Ders saatleri (sadece okul seçilmişse veya hem okul hem iş seçilmişse)
+                                    (formData.purpose.includes('school')) && React.createElement('div', {
+                                        key: 'school',
+                                        className: "bg-white/10 rounded-xl p-4"
+                                    }, [
+                                        React.createElement('h4', {
+                                            key: 'title',
+                                            className: "text-lg font-bold text-white mb-3 flex items-center gap-2"
+                                        }, ['🎓', 'Ders Saatleri']),
+                                        React.createElement('div', {
+                                            key: 'grid',
+                                            className: "grid grid-cols-1 sm:grid-cols-2 gap-4"
+                                        }, [
+                                            React.createElement('div', { key: 'start' }, [
+                                                React.createElement('label', {
+                                                    key: 'label',
+                                                    className: "block text-base font-bold text-white mb-2"
+                                                }, 'Ders Başlangıç'),
+                                                React.createElement('input', {
+                                                    key: 'input',
+                                                    type: "time",
+                                                    value: dayData.schoolStart,
+                                                    onChange: (e) => updateScheduleDay(day, 'schoolStart', e.target.value),
+                                                    className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                                                })
+                                            ]),
+                                            React.createElement('div', { key: 'end' }, [
+                                                React.createElement('label', {
+                                                    key: 'label',
+                                                    className: "block text-base font-bold text-white mb-2"
+                                                }, 'Ders Bitiş'),
+                                                React.createElement('input', {
+                                                    key: 'input',
+                                                    type: "time",
+                                                    value: dayData.schoolEnd,
+                                                    onChange: (e) => updateScheduleDay(day, 'schoolEnd', e.target.value),
+                                                    className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                                                })
+                                            ])
+                                        ])
+                                    ]),
+                                    
+                                    // Mesai saatleri (sadece iş seçilmişse veya hem okul hem iş seçilmişse)
+                                    (formData.purpose.includes('work')) && React.createElement('div', {
+                                        key: 'work',
+                                        className: "bg-white/10 rounded-xl p-4"
+                                    }, [
+                                        React.createElement('h4', {
+                                            key: 'title',
+                                            className: "text-lg font-bold text-white mb-3 flex items-center gap-2"
+                                        }, ['💼', 'Mesai Saatleri']),
+                                        React.createElement('div', {
+                                            key: 'grid',
+                                            className: "grid grid-cols-1 sm:grid-cols-2 gap-4"
+                                        }, [
+                                            React.createElement('div', { key: 'start' }, [
+                                                React.createElement('label', {
+                                                    key: 'label',
+                                                    className: "block text-base font-bold text-white mb-2"
+                                                }, 'Mesai Başlangıç'),
+                                                React.createElement('input', {
+                                                    key: 'input',
+                                                    type: "time",
+                                                    value: dayData.workStart,
+                                                    onChange: (e) => updateScheduleDay(day, 'workStart', e.target.value),
+                                                    className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                                                })
+                                            ]),
+                                            React.createElement('div', { key: 'end' }, [
+                                                React.createElement('label', {
+                                                    key: 'label',
+                                                    className: "block text-base font-bold text-white mb-2"
+                                                }, 'Mesai Bitiş'),
+                                                React.createElement('input', {
+                                                    key: 'input',
+                                                    type: "time",
+                                                    value: dayData.workEnd,
+                                                    onChange: (e) => updateScheduleDay(day, 'workEnd', e.target.value),
+                                                    className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                                                })
+                                            ])
+                                        ])
+                                    ])
+                                ])
+                            ]);
+                        })
+                    )
+                ]),
+                
+                // Step 8: Tamamlandı
+                React.createElement('div', { key: 'step8', className: "text-center space-y-6" }, [
+                    React.createElement('div', { key: 'icon', className: "w-24 h-24 bg-gradient-to-br from-white to-white/80 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce" }, '✅'),
+                    React.createElement('h2', { key: 'title', className: "text-4xl font-extrabold text-white mb-4 tracking-tight" }, 'Harika! 🎉'),
+                    React.createElement('p', { key: 'subtitle', className: "text-xl text-white/90 mb-6" }, `Her şey hazır, ${formData.name}!`),
+                    React.createElement('div', { key: 'features', className: "bg-white/20 rounded-2xl p-6 text-left space-y-3" }, [
+                        React.createElement('p', { key: 'ai', className: "text-white/90 text-lg" }, '✨ Yapay zeka destekli öneriler aktif'),
+                        React.createElement('p', { key: 'plans', className: "text-white/90 text-lg" }, '📅 Kişiselleştirilmiş planlar hazır'),
+                        React.createElement('p', { key: 'reminders', className: "text-white/90 text-lg" }, '🔔 Akıllı hatırlatmalar devrede'),
+                        React.createElement('p', { key: 'friends', className: "text-white/90 text-lg" }, `👥 ${formData.friends.filter(f => f.trim()).length} arkadaşınla planlar yapabiliriz`)
+                    ])
+                ])
+            ];
+            
+            return React.createElement('div', {
+                className: "fixed inset-0 bg-gradient-to-br from-purple-700 via-indigo-800 to-pink-600 flex items-center justify-center p-4 z-50 overflow-hidden"
+            }, [
+                React.createElement('div', { key: 'bubbles', className: "absolute -top-1/4 -left-1/4 w-96 h-96 bg-white/15 rounded-full filter blur-3xl opacity-70" }),
+                React.createElement('div', { key: 'bubbles2', className: "absolute -bottom-1/4 -right-1/4 w-72 h-72 bg-white/10 rounded-full filter blur-3xl opacity-60" }),
+                React.createElement('div', { key: 'card', className: "bg-white/15 rounded-3xl shadow-2xl max-w-2xl w-full p-6 sm:p-10 max-h-[90vh] overflow-y-auto backdrop-blur-xl border border-white/30 ring-2 ring-white/10 transform transition-all duration-300 hover:scale-[1.01]" }, [
+                    // Progress Bar
+                    React.createElement('div', { key: 'progress', className: "mb-8" }, [
+                        React.createElement('div', { key: 'bar', className: "flex justify-between mb-2 space-x-1" }, 
+                            [...Array(8)].map((_, s) => 
+                                React.createElement('div', { key: s, className: "w-full h-2 bg-white/30 rounded-full overflow-hidden" }, 
+                                    React.createElement('div', {
+                                        className: "h-full bg-white rounded-full transition-transform duration-500 ease-out",
+                                        style: { transform: s < step ? 'translateX(0%)' : 'translateX(-100%)' }
+                                    })
+                                )
+                            )
+                        ),
+                        React.createElement('p', { key: 'text', className: "text-sm font-semibold text-white/70 text-center" }, `Adım ${step + 1} / 8`)
+                    ]),
+                    
+                    // Current Step
+                    React.createElement('div', { key: 'content', className: "min-h-[400px] transition-opacity duration-300 ease-out" }, 
+                        React.createElement('div', { className: "animate-slideUp" }, steps[step])
+                    ),
+                    
+                    // Navigation Buttons
+                    React.createElement('div', { key: 'nav', className: "flex gap-3 mt-8" }, [
+                        step > 0 && React.createElement('button', {
+                            key: 'prev',
+                            onClick: prevStep,
+                            className: "flex items-center gap-2 px-6 py-3 bg-white/20 text-white rounded-xl hover:bg-white/30 transition-all border border-white/30 transform hover:scale-105 font-semibold"
+                        }, ['←', 'Geri']),
+                        
+                        step === 7 ? React.createElement('button', {
+                            key: 'complete',
+                            onClick: handleComplete,
+                            className: "w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-emerald-400 to-green-500 text-white rounded-xl hover:from-emerald-500 hover:to-green-600 transition-all text-xl font-bold transform hover:scale-105"
+                        }, ['Hadi Başlayalım! 🚀']) : React.createElement('button', {
+                            key: 'next',
+                            onClick: nextStep,
+                            disabled: !canProceed(),
+                            className: `flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all transform hover:scale-105 text-xl font-bold ${canProceed() ? 'bg-white text-purple-700 hover:bg-gray-100' : 'bg-white/20 text-white/50 cursor-not-allowed border border-white/30'}`
+                        }, ['Devam', '→'])
+                    ])
+                ])
+            ]);
+        };
+        
+        // Main App Component
+        // Profile Page Component
+        const ProfilePage = ({ userData, onBack, onEdit }) => {
+            const [isEditing, setIsEditing] = useState(false);
+            const [editData, setEditData] = useState(userData);
+            
+            const handleSave = () => {
+                // Local storage'a kaydet
+                localStorage.setItem('planiq_user', JSON.stringify(editData));
+                onEdit(editData);
+                setIsEditing(false);
+            };
+            
+            const updateField = (field, value) => {
+                setEditData(prev => ({ ...prev, [field]: value }));
+            };
+            
+            if (isEditing) {
+                return React.createElement('div', {
+                    className: "min-h-screen bg-gradient-to-br from-purple-700 via-indigo-800 to-pink-600 p-4"
+                }, [
+                    React.createElement('div', {
+                        key: 'header',
+                        className: "flex items-center justify-between mb-8"
+                    }, [
+                        React.createElement('button', {
+                            onClick: () => setIsEditing(false),
+                            className: "p-3 bg-white/20 text-white rounded-xl hover:bg-white/30 transition-all"
+                        }, '←'),
+                        React.createElement('h1', {
+                            className: "text-2xl font-bold text-white"
+                        }, 'Profili Düzenle')
+                    ]),
+                    React.createElement('div', {
+                        key: 'form',
+                        className: "bg-white/15 rounded-2xl p-6 backdrop-blur-xl space-y-6"
+                    }, [
+                        React.createElement('div', { key: 'name' }, [
+                            React.createElement('label', {
+                                key: 'label',
+                                className: "block text-base font-bold text-white mb-2"
+                            }, 'Ad Soyad'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "text",
+                                value: editData.name,
+                                onChange: (e) => updateField('name', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'city' }, [
+                            React.createElement('label', {
+                                key: 'label',
+                                className: "block text-base font-bold text-white mb-2"
+                            }, 'Şehir'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "text",
+                                value: editData.city,
+                                onChange: (e) => updateField('city', e.target.value),
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            })
+                        ]),
+                        React.createElement('div', { key: 'purpose' }, [
+                            React.createElement('label', {
+                                key: 'label',
+                                className: "block text-base font-bold text-white mb-2"
+                            }, 'Amaç'),
+                            React.createElement('div', { key: 'grid', className: "grid grid-cols-2 gap-3" }, 
+                                [
+                                    { id: 'school', label: 'Öğrenci', icon: '🎓' },
+                                    { id: 'work', label: 'Çalışan', icon: '💼' }
+                                ].map(option => 
+                                    React.createElement('button', {
+                                        key: option.id,
+                                        onClick: () => updateField('purpose', option.id),
+                                        className: `py-3 px-4 rounded-xl border-2 transition-all transform hover:scale-105 flex items-center justify-center text-lg font-semibold ${editData.purpose === option.id ? 'bg-white text-purple-700 border-white' : 'bg-white/15 text-white border-white/30 hover:border-white/50'}`
+                                    }, [option.icon, ' ', option.label])
+                                )
+                            )
+                        ]),
+                        React.createElement('div', { key: 'apiKey' }, [
+                            React.createElement('label', {
+                                key: 'label',
+                                className: "block text-base font-bold text-white mb-2"
+                            }, 'OpenAI API Key (İsteğe Bağlı)'),
+                            React.createElement('input', {
+                                key: 'input',
+                                type: "password",
+                                value: editData.apiKey || '',
+                                onChange: (e) => updateField('apiKey', e.target.value),
+                                placeholder: "sk-proj-... (AI önerileri için)",
+                                className: "w-full px-5 py-3.5 rounded-xl border-2 border-white/30 focus:border-white focus:ring-2 focus:ring-white/50 transition-all text-white placeholder-white/70 bg-white/15 text-lg"
+                            }),
+                            React.createElement('p', {
+                                key: 'help',
+                                className: "text-sm text-white/60 mt-2"
+                            }, 'AI önerileri için OpenAI API key gerekli. Key yoksa statik öneriler gösterilir.')
+                        ]),
+                        React.createElement('div', { key: 'buttons', className: "flex gap-3" }, [
+                            React.createElement('button', {
+                                key: 'cancel',
+                                onClick: () => setIsEditing(false),
+                                className: "flex-1 py-3 px-4 bg-white/20 text-white rounded-xl hover:bg-white/30 transition-all font-semibold"
+                            }, 'İptal'),
+                            React.createElement('button', {
+                                key: 'save',
+                                onClick: () => {
+                                    // API key'i localStorage'a kaydet
+                                    if (editData.apiKey) {
+                                        localStorage.setItem('openai_api_key', editData.apiKey);
+                                    }
+                                    handleSave();
+                                },
+                                className: "flex-1 py-3 px-4 bg-gradient-to-r from-emerald-400 to-green-500 text-white rounded-xl hover:from-emerald-500 hover:to-green-600 transition-all font-semibold"
+                            }, 'Kaydet')
+                        ])
+                    ])
+                ]);
+            }
+            
+            return React.createElement('div', {
+                className: "min-h-screen bg-gradient-to-br from-purple-700 via-indigo-800 to-pink-600 p-4"
+            }, [
+                React.createElement('div', {
+                    key: 'header',
+                    className: "flex items-center justify-between mb-8"
+                }, [
+                    React.createElement('button', {
+                        onClick: onBack,
+                        className: "p-3 bg-white/20 text-white rounded-xl hover:bg-white/30 transition-all"
+                    }, '←'),
+                    React.createElement('h1', {
+                        className: "text-2xl font-bold text-white"
+                    }, 'Profil'),
+                    React.createElement('button', {
+                        onClick: () => setIsEditing(true),
+                        className: "p-3 bg-white/20 text-white rounded-xl hover:bg-white/30 transition-all"
+                    }, '✏️')
+                ]),
+                React.createElement('div', {
+                    key: 'content',
+                    className: "bg-white/15 rounded-2xl p-6 backdrop-blur-xl space-y-6"
+                }, [
+                    React.createElement('div', { key: 'avatar', className: "text-center" }, [
+                        React.createElement('div', {
+                            key: 'icon',
+                            className: "w-24 h-24 bg-gradient-to-br from-white to-white/80 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl"
+                        }, '👤'),
+                        React.createElement('h2', {
+                            key: 'name',
+                            className: "text-3xl font-bold text-white mb-2"
+                        }, userData.name),
+                        React.createElement('p', {
+                            key: 'email',
+                            className: "text-white/70 text-lg"
+                        }, userData.email || 'E-posta yok')
+                    ]),
+                    React.createElement('div', { key: 'info', className: "space-y-4" }, [
+                        React.createElement('div', { key: 'city', className: "flex items-center gap-3" }, [
+                            React.createElement('span', { key: 'icon', className: "text-2xl" }, '📍'),
+                            React.createElement('span', { key: 'text', className: "text-white/90 text-lg" }, userData.city)
+                        ]),
+                        React.createElement('div', { key: 'purpose', className: "flex items-start gap-3" }, [
+                            React.createElement('span', { key: 'icon', className: "text-2xl mt-1" }, '🎯'),
+                            React.createElement('div', { key: 'content' }, [
+                                React.createElement('p', { key: 'label', className: "text-white/90 text-lg font-semibold" }, 'Amaçların'),
+                                React.createElement('div', { key: 'tags', className: "flex flex-wrap gap-2 mt-2" }, 
+                                    (userData.purpose || []).map((purpose, index) => {
+                                        const purposeMap = {
+                                            'school': { label: 'Okul/Üniversite', icon: '🎓' },
+                                            'work': { label: 'İş/Kariyer', icon: '💼' },
+                                            'personal': { label: 'Kişisel Gelişim', icon: '🌟' },
+                                            'social': { label: 'Sosyal Yaşam', icon: '👥' }
+                                        };
+                                        const purposeInfo = purposeMap[purpose] || { label: purpose, icon: '⭐' };
+                                        return React.createElement('span', {
+                                            key: index,
+                                            className: "px-3 py-1 bg-white/20 text-white rounded-full text-sm flex items-center gap-1"
+                                        }, [purposeInfo.icon, ' ', purposeInfo.label]);
+                                    })
+                                )
+                            ])
+                        ]),
+                        userData.friends && userData.friends.filter(f => f.trim()).length > 0 && React.createElement('div', { key: 'friends', className: "flex items-center gap-3" }, [
+                            React.createElement('span', { key: 'icon', className: "text-2xl" }, '👥'),
+                            React.createElement('span', { key: 'text', className: "text-white/90 text-lg" }, `${userData.friends.filter(f => f.trim()).length} arkadaş`)
+                        ]),
+                        userData.cuisines && userData.cuisines.length > 0 && React.createElement('div', { key: 'cuisines', className: "flex items-start gap-3" }, [
+                            React.createElement('span', { key: 'icon', className: "text-2xl mt-1" }, '🍽️'),
+                            React.createElement('div', { key: 'content' }, [
+                                React.createElement('p', { key: 'label', className: "text-white/90 text-lg font-semibold" }, 'Sevdiğin Mutfaklar'),
+                                React.createElement('div', { key: 'tags', className: "flex flex-wrap gap-2 mt-2" }, 
+                                    userData.cuisines.map((cuisine, index) => 
+                                        React.createElement('span', {
+                                            key: index,
+                                            className: "px-3 py-1 bg-white/20 text-white rounded-full text-sm"
+                                        }, cuisine)
+                                    )
+                                )
+                            ])
+                        ]),
+                        userData.activities && userData.activities.length > 0 && React.createElement('div', { key: 'activities', className: "flex items-start gap-3" }, [
+                            React.createElement('span', { key: 'icon', className: "text-2xl mt-1" }, '🎬'),
+                            React.createElement('div', { key: 'content' }, [
+                                React.createElement('p', { key: 'label', className: "text-white/90 text-lg font-semibold" }, 'Aktivitelerin'),
+                                React.createElement('div', { key: 'tags', className: "flex flex-wrap gap-2 mt-2" }, 
+                                    userData.activities.map((activity, index) => 
+                                        React.createElement('span', {
+                                            key: index,
+                                            className: "px-3 py-1 bg-white/20 text-white rounded-full text-sm"
+                                        }, activity)
+                                    )
+                                )
+                            ])
+                        ])
+                    ])
+                ])
+            ]);
+        };
+
+        const App = () => {
+            const [isSplashVisible, setIsSplashVisible] = useState(true);
+            const [isDark, setIsDark] = useState(false);
+            const [userData, setUserData] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [currentPage, setCurrentPage] = useState('main');
+            const [selectedDate, setSelectedDate] = useState(new Date());
+            const [notifications, setNotifications] = useState([]);
+            
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    setIsSplashVisible(false);
+                }, 3000);
+                
+                return () => clearTimeout(timer);
+            }, []);
+            
+            useEffect(() => {
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [isDark]);
+            
+            // Check for existing user data
+            useEffect(() => {
+                const checkUser = () => {
+                    try {
+                        // Local storage'dan kullanıcı verilerini kontrol et
+                        const savedUser = localStorage.getItem('planiq_user');
+                        const savedUserId = localStorage.getItem('planiq_userId');
+                        
+                        if (savedUser && savedUserId) {
+                            setUserData(JSON.parse(savedUser));
+                            setUserId(savedUserId);
+                            console.log('Kullanıcı verileri yüklendi:', JSON.parse(savedUser));
+                        }
+                    } catch (error) {
+                        console.error('Kullanıcı kontrolü hatası:', error);
+                    }
+                };
+                
+                if (!isSplashVisible) {
+                    checkUser();
+                }
+            }, [isSplashVisible]);
+            
+            // Onboarding'e geri dönmek için local storage'ı temizle
+            const resetToOnboarding = () => {
+                localStorage.removeItem('planiq_user');
+                localStorage.removeItem('planiq_userId');
+                setUserData(null);
+                setUserId(null);
+                setCurrentPage('main');
+            };
+            
+            const handleOnboardingComplete = (data, uid) => {
+                // Schedule verilerini ana uygulamaya entegre et
+                const processedData = {
+                    ...data,
+                    // Schedule verilerini tasks formatına çevir
+                    scheduleTasks: generateScheduleTasks(data.schedule, data.purpose)
+                };
+                setUserData(processedData);
+                setUserId(uid);
+            };
+            
+            // Schedule verilerinden görevler oluştur
+            const generateScheduleTasks = (schedule, purposes) => {
+                const tasks = [];
+                const today = new Date();
+                
+                // 7 gün için schedule görevleri oluştur
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(today);
+                    date.setDate(today.getDate() + i);
+                    const dayKey = formatDateKey(date);
+                    const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+                    const dayName = dayNames[date.getDay()];
+                    const dayData = schedule[dayName];
+                    
+                    if (dayData && dayData.active) {
+                        // Ders saatleri
+                        if (purposes.includes('school') && dayData.schoolStart && dayData.schoolEnd) {
+                            tasks.push({
+                                id: `schedule-school-${dayKey}-${i}`,
+                                name: 'Ders',
+                                time: dayData.schoolStart,
+                                duration: calculateDuration(dayData.schoolStart, dayData.schoolEnd),
+                                category: 'schedule',
+                                priority: 'high',
+                                isRecurring: true,
+                                dayOfWeek: dayName,
+                                type: 'school',
+                                description: 'Ders saati - PlanIQ tarafından otomatik oluşturuldu'
+                            });
+                        }
+                        
+                        // Mesai saatleri
+                        if (purposes.includes('work') && dayData.workStart && dayData.workEnd) {
+                            tasks.push({
+                                id: `schedule-work-${dayKey}-${i}`,
+                                name: 'Mesai',
+                                time: dayData.workStart,
+                                duration: calculateDuration(dayData.workStart, dayData.workEnd),
+                                category: 'schedule',
+                                priority: 'high',
+                                isRecurring: true,
+                                dayOfWeek: dayName,
+                                type: 'work',
+                                description: 'Mesai saati - PlanIQ tarafından otomatik oluşturuldu'
+                            });
+                        }
+                    }
+                }
+                
+                return tasks;
+            };
+            
+            // Saat farkını hesapla (dakika cinsinden)
+            const calculateDuration = (startTime, endTime) => {
+                const start = new Date(`2000-01-01T${startTime}`);
+                const end = new Date(`2000-01-01T${endTime}`);
+                const diffMs = end - start;
+                return Math.round(diffMs / (1000 * 60)); // dakika cinsinden
+            };
+            
+            const goToPreviousDay = () => {
+                setSelectedDate(prevDate => {
+                    const newDate = new Date(prevDate);
+                    newDate.setDate(prevDate.getDate() - 1);
+                    return newDate;
+                });
+            };
+            
+            const goToNextDay = () => {
+                setSelectedDate(prevDate => {
+                    const newDate = new Date(prevDate);
+                    newDate.setDate(prevDate.getDate() + 1);
+                    return newDate;
+                });
+            };
+            
+            const goToToday = () => {
+                setSelectedDate(new Date());
+            };
+            
+            if (isSplashVisible) {
+                return React.createElement(SplashScreen);
+            }
+            
+            if (!userData) {
+                return React.createElement(Onboarding, { onComplete: handleOnboardingComplete });
+            }
+            
+            if (currentPage === 'profile') {
+                return React.createElement(ProfilePage, { 
+                    userData, 
+                    onBack: () => setCurrentPage('main'),
+                    onEdit: (newData) => setUserData(newData)
+                });
+            }
+            
+            const selectedDateKey = formatDateKey(selectedDate);
+            const displayDate = formatDisplayDate(selectedDate);
+            
+            return React.createElement('div', {
+                className: `min-h-screen ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'} transition-colors duration-300`
+            }, [
+                // Header
+                React.createElement('header', {
+                    key: 'header',
+                    className: `${isDark ? 'bg-gray-900/80' : 'bg-white/80'} backdrop-blur-md shadow-sm sticky top-0 z-40`
+                }, React.createElement('div', {
+                    className: "max-w-6xl mx-auto px-4 py-4 flex justify-between items-center"
+                }, [
+                    React.createElement('div', {
+                        key: 'logo',
+                        className: "flex items-center gap-2 cursor-pointer",
+                        onClick: () => setCurrentPage('main')
+                    }, [
+                        React.createElement('div', { key: 'brain', className: `w-8 h-8 ${isDark ? 'text-purple-400' : 'text-purple-600'}` }, '🧠'),
+                        React.createElement('h1', { key: 'title', className: "text-2xl font-bold" }, [
+                            'Plan',
+                            React.createElement('span', { key: 'iq', className: isDark ? 'text-yellow-300' : 'text-purple-600' }, 'IQ')
+                        ])
+                    ]),
+                    React.createElement('div', { key: 'controls', className: "flex items-center gap-4" }, [
+                        React.createElement('span', { key: 'welcome', className: "font-medium hidden sm:block" }, `Hoş geldin, ${userData.name}!`),
+                        React.createElement('button', {
+                            key: 'profile',
+                            onClick: () => setCurrentPage('profile'),
+                            className: `p-2 rounded-xl transition-all hover:scale-105 ${isDark ? 'bg-gray-800 hover:bg-gray-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`,
+                            title: "Profil"
+                        }, '👤'),
+                        React.createElement('button', {
+                            key: 'reset',
+                            onClick: resetToOnboarding,
+                            className: `p-2 rounded-xl transition-all hover:scale-105 ${isDark ? 'bg-red-800 hover:bg-red-700 text-white' : 'bg-red-100 hover:bg-red-200 text-red-700'}`,
+                            title: "Çıkış Yap / Onboarding'e Dön"
+                        }, '🚪'),
+                        React.createElement('button', {
+                            key: 'theme',
+                            onClick: () => setIsDark(!isDark),
+                            className: `p-2 rounded-full ${isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} transition-colors`,
+                            'aria-label': "Temayı Değiştir"
+                        }, isDark ? '☀️' : '🌙')
+                    ])
+                ])),
+                
+                // Main Content
+                React.createElement('main', {
+                    key: 'main',
+                    className: "max-w-3xl mx-auto p-4 md:p-8"
+                }, [
+                    // Calendar Navigation
+                    React.createElement('div', {
+                        key: 'calendar',
+                        className: "flex items-center justify-between mb-6 bg-white/50 dark:bg-gray-800/50 p-4 rounded-xl shadow animate-slideUp"
+                    }, [
+                        React.createElement('button', {
+                            key: 'prev',
+                            onClick: goToPreviousDay,
+                            className: `p-2 rounded-full ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} transition-colors`,
+                            'aria-label': "Önceki Gün"
+                        }, '←'),
+                        React.createElement('div', { key: 'date', className: "text-center" }, [
+                            React.createElement('h2', { key: 'day', className: "text-2xl font-bold" }, displayDate),
+                            displayDate !== "Bugün" && React.createElement('button', {
+                                key: 'today',
+                                onClick: goToToday,
+                                className: `text-xs mt-1 ${isDark ? 'text-purple-300 hover:text-purple-200' : 'text-purple-600 hover:text-purple-700'} font-semibold`
+                            }, 'Bugüne Git')
+                        ]),
+                        React.createElement('button', {
+                            key: 'next',
+                            onClick: goToNextDay,
+                            className: `p-2 rounded-full ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} transition-colors`,
+                            'aria-label': "Sonraki Gün"
+                        }, '→')
+                    ]),
+                    
+                    // Daily Plan Card
+                    React.createElement('div', {
+                        key: 'planCard',
+                        className: "animate-slideUp"
+                    }, React.createElement(DailyPlanCard, {
+                        day: displayDate,
+                        userData: userData,
+                        selectedDateKey: selectedDateKey,
+                        userId: userId,
+                        isDark: isDark
+                    }))
+                ])
+            ]);
+        };
+        
+        // Render App
+        try {
+            console.log('PlanIQ uygulaması başlatılıyor...');
+            ReactDOM.render(React.createElement(App), document.getElementById('root'));
+            console.log('PlanIQ uygulaması başarıyla yüklendi!');
+        } catch (error) {
+            console.error('PlanIQ yükleme hatası:', error);
+            document.getElementById('root').innerHTML = `
+                <div style="padding: 20px; text-align: center; font-family: Arial;">
+                    <h2>PlanIQ Yükleme Hatası</h2>
+                    <p>Bir hata oluştu: ${error.message}</p>
+                    <p>Lütfen sayfayı yenileyin veya geliştirici konsolunu kontrol edin.</p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
