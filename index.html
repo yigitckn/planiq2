@@ -170,207 +170,29 @@
         };
         
         // DailyPlanCard Component
-        const DailyPlanCard = ({ day, userData, selectedDateKey, userId, isDark }) => {
-            const [tasks, setTasks] = useState([]);
-            const [isLoadingTasks, setIsLoadingTasks] = useState(true);
-            const [isAddingTask, setIsAddingTask] = useState(false);
-            const [newTask, setNewTask] = useState({ time: '', name: '' });
-            const [modalTask, setModalTask] = useState(null);
-            const [modalContentStage, setModalContentStage] = useState('initial');
-            const [aiSuggestionContent, setAiSuggestionContent] = useState(null);
-            
-            // Gerçek AI tarif öneri fonksiyonu
-            const generateRecipeSuggestions = async (mealType, cuisine, userCuisines) => {
-                try {
-                    // AI için tarif önerisi
-                    const generateAIRecipe = async (prompt) => {
-                        try {
-                            // Gemini AI API - Google Search ile gerçek tarifler
-                            console.log('Gemini AI + Google Search tarif önerileri çalışıyor...');
-                            
-                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt })
-});
-
-                            if (geminiResponse.ok) {
-                                const data = await geminiResponse.json();
-                                console.log('Gemini API Response:', data);
-                                
-                                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
-                                    const result = data.candidates[0].content.parts[0].text;
-                                    console.log('Gemini AI Success:', result);
-                                    return result;
-                                }
-                            } else {
-                                console.log('Gemini API Error:', geminiResponse.status, await geminiResponse.text());
-                            }
-                        } catch (error) {
-                            console.log('Gemini AI failed:', error);
-                        }
-
-                        // Fallback: Mock AI (API çalışmazsa)
-                        console.log('Fallback Mock AI tarif önerileri çalışıyor...');
-                        
-                        // Öğün tipini çıkar - daha kesin kontrol
-                        let mealType = 'kahvaltı'; // varsayılan
-                        if (prompt.includes('öğle yemeği') || prompt.includes('öğle')) {
-                            mealType = 'öğle yemeği';
-                        } else if (prompt.includes('akşam yemeği') || prompt.includes('akşam')) {
-                            mealType = 'akşam yemeği';
-                        } else if (prompt.includes('kahvaltı')) {
-                            mealType = 'kahvaltı';
-                        }
-                        
-                        console.log('Algılanan öğün tipi:', mealType);
-                        
-                        // Mutfak tipini çıkar
-                        const cuisine = prompt.includes('Türk') ? 'Türk' : 
-                                      prompt.includes('İtalyan') ? 'İtalyan' : 
-                                      prompt.includes('Uzak Doğu') ? 'Uzak Doğu' : 'genel';
-                        
-                        // Gerçekçi tarif önerileri oluştur - kısa ve öz
-                        const mockRecipes = {
-                            'kahvaltı': [
-                                `Menemen:\nTaze domates, biber ve yumurta ile hazırlanan Türk kahvaltısının vazgeçilmez lezzeti. 15 dakikada hazır.`,
-                                `Omlet:\nKlasik yumurta yemeği, taze otlar ve peynirle zenginleştirilmiş. 10 dakikada hazır.`,
-                                `Serpme Kahvaltı:\nPeynir, zeytin, domates, salatalık ve reçel ile hazırlanan geleneksel Türk kahvaltısı.`,
-                                `Avokado Tost:\nTaze avokado, limon ve tuz ile hazırlanan modern kahvaltı. 5 dakikada hazır.`,
-                                `Yulaf Ezmesi:\nSüt ile pişirilen yulaf, taze meyveler ve bal ile tatlandırılmış. 10 dakikada hazır.`
-                            ],
-                            'öğle yemeği': [
-                                `Kebap:\nGeleneksel Türk kebap çeşitleri, taze et ve baharatlarla hazırlanan. 30 dakikada hazır.`,
-                                `Mantı:\nHamur içi et ile doldurulmuş, yoğurt sosu ile servis edilen. 45 dakikada hazır.`,
-                                `Lahmacun:\nİnce hamur üzerine kıyma, domates ve baharatlarla hazırlanan. 25 dakikada hazır.`,
-                                `Çorba:\nSıcak ve besleyici çorba çeşitleri. 20 dakikada hazır.`,
-                                `Salata:\nTaze yeşillikler, sebzeler ve protein kaynakları ile hazırlanan. 15 dakikada hazır.`,
-                                `Sandviç:\nEkmek arası taze malzemelerle hazırlanan pratik yemek. 10 dakikada hazır.`
-                            ],
-                            'akşam yemeği': [
-                                `Kuzu Tandır:\nUzun süre pişirilen kuzu eti, geleneksel Türk mutfağının özel lezzeti. 2 saatte hazır.`,
-                                `Balık:\nTaze balık çeşitleri, zeytinyağı ve limon ile hazırlanan. 30 dakikada hazır.`,
-                                `Pasta:\nMakarna çeşitleri, çeşitli soslarla hazırlanan doyurucu yemek. 25 dakikada hazır.`,
-                                `Et Yemeği:\nTavuk, dana veya kuzu eti ile hazırlanan protein açısından zengin yemek. 45 dakikada hazır.`,
-                                `Sebze Yemeği:\nTaze sebzelerle hazırlanan hafif ve sağlıklı yemek. 20 dakikada hazır.`,
-                                `Pilav:\nPirinç pilavı, et suyu ile hazırlanan geleneksel yan yemek. 30 dakikada hazır.`
-                            ]
-                        };
-                        
-                        // Rastgele 3-4 tarif seç
-                        const recipes = mockRecipes[mealType] || mockRecipes['kahvaltı'];
-                        const selectedRecipes = recipes.sort(() => 0.5 - Math.random()).slice(0, 3);
-                        
-                        // AI yanıtı formatında döndür
-                        return selectedRecipes.join('\n\n');
-                    };
-                    
-                    // AI için prompt oluştur
-                    const cuisineText = userCuisines && userCuisines.length > 0 
-                        ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
-                        : 'Genel mutfak';
-                    
-                    const mealTypeTurkish = {
-                        'kahvaltı': 'kahvaltı',
-                        'öğle yemeği': 'öğle yemeği', 
-                        'akşam yemeği': 'akşam yemeği'
-                    };
-                    
-                    const currentMealType = mealTypeTurkish[mealType] || mealType;
-                    
-                    const aiPrompt = `${currentMealType} için ${cuisineText} tarifleri öner. 
-                    Lütfen 2-3 farklı lezzetli tarif öner, her birinin adını ve detaylı açıklamasını ver. 
-                    Format: 
-                    "Tarif Adı:
-                    Açıklama: [Tarifin malzemelerini, hazırlanışını, özelliklerini detaylıca anlat]"
-                    
-                    Örnek:
-                    "Menemen:
-                    Açıklama: Domates, biber ve yumurta ile hazırlanan, Türk kahvaltılarının vazgeçilmez lezzeti. Taze domates ve biberlerin kavrulmasıyla hazırlanan bu pratik yemek, doyurucu ve besleyicidir."
-                    
-                    Sadece tarif isimlerini ve açıklamalarını ver, başka açıklama yapma.`;
-                    
-                    // AI'dan tarif al
-                    const aiResponse = await generateAIRecipe(aiPrompt);
-                    
-                    if (aiResponse) {
-                        // AI yanıtını parse et - tarif adı ve açıklama formatında
-                        const lines = aiResponse.split('\n').filter(line => line.trim());
-                        const suggestions = [];
-                        let currentRecipe = null;
-                        
-                        for (let i = 0; i < lines.length; i++) {
-                            const line = lines[i].trim();
-                            
-                            // Tarif adı (Açıklama: ile bitmeyen satırlar)
-                            if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
-                                if (currentRecipe) {
-                                    suggestions.push(currentRecipe);
-                                }
-                                currentRecipe = {
-                                    name: line.replace(/^[-•*]\s*/, ''),
-                                    description: ''
-                                };
-                            }
-                            // Açıklama
-                            else if (line.startsWith('Açıklama:') && currentRecipe) {
-                                currentRecipe.description = line.replace('Açıklama:', '').trim();
-                            }
-                        }
-                        
-                        // Son tarifi ekle
-                        if (currentRecipe) {
-                            suggestions.push(currentRecipe);
-                        }
-                        
-                        if (suggestions.length > 0) {
-                            return suggestions.map(s => `${s.name}:\n${s.description}`);
-                        }
-                    }
-                    
-                    // Fallback: Statik tarifler
-                    const recipes = {
-                    kahvaltı: {
-                        'genel': ['Omlet - Klasik Yumurta Yemeği', 'Menemen - Türk Kahvaltı Klasikleri', 'Yulaf Ezmesi - Sağlıklı Kahvaltı'],
-                        'Türk Mutfağı': ['Börek - Geleneksel Türk Böreği', 'Pogaca - Tuzlu Hamur İşi', 'Simit - Klasik Türk Simidi'],
-                        'Bulgar': ['Banitsa - Geleneksel Bulgar Böreği', 'Mekitsa - Bulgar Kızartması', 'Kashkaval - Bulgar Peyniri'],
-                        'İtalyan': ['Frittata - İtalyan Omleti', 'Panettone - İtalyan Tatlısı', 'Cappuccino - İtalyan Kahvesi'],
-                        'Uzak Doğu': ['Miso Çorbası - Japon Kahvaltısı', 'Congee - Pirinç Lapası', 'Dim Sum - Çin Kahvaltısı'],
-                        'Meksika': ['Huevos Rancheros - Meksika Kahvaltısı', 'Chilaquiles - Meksika Klasikleri', 'Breakfast Burrito - Meksika Burritosu'],
-                        'Hint': ['Masala Dosa - Hint Kahvaltısı', 'Paratha - Hint Ekmeği', 'Chai - Hint Çayı']
-                    },
-                    'öğle yemeği': {
-                        'genel': ['Salata', 'Sandviç', 'Çorba', 'Makarna', 'Pilav'],
-                        'Türk Mutfağı': ['Döner', 'Lahmacun', 'Pide', 'Mercimek Çorbası'],
-                        'İtalyan': ['Pizza', 'Risotto', 'Pasta', 'Minestrone'],
-                        'Uzak Doğu': ['Sushi', 'Ramen', 'Pad Thai', 'Teriyaki'],
-                        'Meksika': ['Tacos', 'Burrito', 'Quesadilla', 'Enchiladas'],
-                        'Hint': ['Biryani', 'Curry', 'Tandoori', 'Dal']
-                    },
-                    'akşam yemeği': {
-                        'genel': ['Izgara Et', 'Balık', 'Sebze Yemeği', 'Pilav', 'Salata'],
-                        'Türk Mutfağı': ['Kebap', 'Karnıyarık', 'Mantı', 'Baklava'],
-                        'İtalyan': ['Spaghetti', 'Lasagna', 'Osso Buco', 'Tiramisu'],
-                        'Uzak Doğu': ['Sushi', 'Tempura', 'Stir Fry', 'Mochi'],
-                        'Meksika': ['Fajitas', 'Chiles Rellenos', 'Tres Leches'],
-                        'Hint': ['Butter Chicken', 'Palak Paneer', 'Naan', 'Gulab Jamun']
-                    }
-                };
-                
-                const cuisineKey = userCuisines.includes(cuisine) ? cuisine : 'genel';
-                const mealRecipes = recipes[mealType] || recipes.kahvaltı;
-                const suggestions = mealRecipes[cuisineKey] || mealRecipes.genel;
-                
-                return suggestions.slice(0, 3); // İlk 3 öneriyi döndür
-                } catch (error) {
-                    console.error('Tarif öneri hatası:', error);
-                    // Hata durumunda genel öneriler
-                    return ['Omlet', 'Menemen', 'Yulaf Ezmesi'];
-                }
-            };
-            
-            // Gerçek AI restoran öneri fonksiyonu
-            const generateRestaurantSuggestions = async (mealType, city, userCuisines) => {
+        const generateAIRecommendations = async (prompt) => {
+    try {
+        const openaiResponse = await fetch('/.netlify/functions/openai-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+        if (openaiResponse.ok) {
+            const data = await openaiResponse.json();
+            if (
+                data.choices &&
+                data.choices[0] &&
+                data.choices[0].message &&
+                data.choices[0].message.content
+            ) {
+                return data.choices[0].message.content;
+            }
+        }
+    } catch (error) {
+        console.error('OpenAI proxy hatası:', error);
+    }
+    return "Şu anda öneri alınamadı. Lütfen tekrar deneyin.";
+};
                 console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
                 try {
                     // OpenAI API entegrasyonu için
@@ -900,10 +722,10 @@
                         `${city} bölgesinde Aile Restoranı - Sıcak Ortam`
                     ];
                 }
-            };
             
-            // Generate AI tasks based on user data
-            const generateAITasks = (userData, dateKey) => {
+            
+           // Generate AI tasks based on user data
+           const generateAITasks = (userData, dateKey) => {
                 if (!userData) return [];
                 
                 const targetDate = new Date(dateKey + 'T00:00:00');
@@ -1521,7 +1343,7 @@
                     ])
                 ]))
             ]);
-        };
+        
         
         // Onboarding Component (full version)
         const Onboarding = ({ onComplete }) => {
