@@ -188,27 +188,11 @@
                             // Gemini AI API - Google Search ile gerçek tarifler
                             console.log('Gemini AI + Google Search tarif önerileri çalışıyor...');
                             
-                            const geminiResponse = await fetch('https://cors-anywhere.herokuapp.com/https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + (localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'), {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                },
-                                body: JSON.stringify({
-                                    contents: [{
-                                        parts: [{
-                                            text: prompt
-                                        }]
-                                    }],
-                                    tools: [{ "google_search": {} }], // Google Search aracı
-                                    generationConfig: {
-                                        temperature: 0.7,
-                                        topK: 40,
-                                        topP: 0.95,
-                                        maxOutputTokens: 500,
-                                    }
-                                })
-                            });
+                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt })
+});
 
                             if (geminiResponse.ok) {
                                 const data = await geminiResponse.json();
