@@ -188,26 +188,10 @@
                             // Gemini AI API - Google Search ile gerçek tarifler
                             console.log('Gemini AI + Google Search tarif önerileri çalışıyor...');
                             
-                            const geminiResponse = await fetch('https://cors-anywhere.herokuapp.com/https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + (localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'), {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                },
-                                body: JSON.stringify({
-                                    contents: [{
-                                        parts: [{
-                                            text: prompt
-                                        }]
-                                    }],
-                                    tools: [{ "google_search": {} }], // Google Search aracı
-                                    generationConfig: {
-                                        temperature: 0.7,
-                                        topK: 40,
-                                        topP: 0.95,
-                                        maxOutputTokens: 500,
-                                    }
-                                })
+                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ prompt })
                             });
 
                             if (geminiResponse.ok) {
@@ -457,36 +441,48 @@
                             const cityRestaurants = {
                                 'istanbul': {
                                     'kahvaltı': [
-                                        `Van Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısının en güzel örneklerini sunan popüler mekan.`,
-                                        `Çakır Kahvaltı:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`,
-                                        `Mado Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan popüler mekan.`
+                                        `Van Kahvaltı Evi:\nBeşiktaş'ta geleneksel Türk kahvaltısının en güzel örneklerini sunan popüler mekan.`,
+                                        `Çakır Kahvaltı:\nŞişli'de serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`,
+                                        `Mado Kahvaltı:\nKadıköy'de modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan popüler mekan.`,
+                                        `Bebek Kahvaltı:\nBebek'te deniz manzaralı kahvaltı deneyimi sunan şık mekan.`,
+                                        `Karaköy Güllüoğlu:\nKaraköy'de geleneksel Türk tatlıları ve kahvaltı sunan ünlü mekan.`
                                     ],
                                     'öğle yemeği': [
-                                        `Hacı Abdullah:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
-                                        `Çiya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
-                                        `Köfteci Ramiz:\n${city} bölgesinde köfte ve ızgara çeşitleriyle ünlü, hızlı servisi olan popüler mekan.`
+                                        `Hacı Abdullah:\nBeyoğlu'nda geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Çiya Sofrası:\nKadıköy'de Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
+                                        `Köfteci Ramiz:\nFatih'te köfte ve ızgara çeşitleriyle ünlü, hızlı servisi olan popüler mekan.`,
+                                        `Zeytin Dalı:\nEtiler'de Akdeniz mutfağı sunan şık restoran.`,
+                                        `Asmalı Mescit:\nBeyoğlu'nda geleneksel Türk mutfağı sunan tarihi mekan.`
                                     ],
                                     'akşam yemeği': [
-                                        `Mikla:\n${city} bölgesinde fine dining deneyimi sunan, şık atmosferi ve özel akşam menüleriyle ünlü romantik restoran.`,
-                                        `Neolokal:\n${city} bölgesinde modern Türk mutfağı sunan, akşam yemeği için özel menüleri olan şık mekan.`,
-                                        `Sunset Grill & Bar:\n${city} bölgesinde manzaralı, akşam yemeği için mükemmel atmosfer sunan lüks restoran.`
+                                        `Mikla:\nBeyoğlu'nda fine dining deneyimi sunan, şık atmosferi ve özel akşam menüleriyle ünlü romantik restoran.`,
+                                        `Neolokal:\nBeyoğlu'nda modern Türk mutfağı sunan, akşam yemeği için özel menüleri olan şık mekan.`,
+                                        `Sunset Grill & Bar:\nEtiler'de manzaralı, akşam yemeği için mükemmel atmosfer sunan lüks restoran.`,
+                                        `Lokanta 1741:\nBeyoğlu'nda geleneksel Osmanlı mutfağı sunan şık restoran.`,
+                                        `Türk Fatih Tutak:\nŞişli'de modern Türk mutfağı sunan Michelin yıldızlı restoran.`
                                     ]
                                 },
                                 'ankara': {
                                     'kahvaltı': [
-                                        `Kızılay Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısı sunan, sıcak atmosferi olan popüler mekan.`,
-                                        `Çankaya Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
-                                        `Ulus Kahvaltı Salonu:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`
+                                        `Kızılay Kahvaltı Evi:\nKızılay'da geleneksel Türk kahvaltısı sunan, sıcak atmosferi olan popüler mekan.`,
+                                        `Çankaya Kahvaltı:\nÇankaya'da modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
+                                        `Ulus Kahvaltı Salonu:\nUlus'ta serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`,
+                                        `Bahçelievler Kahvaltı:\nBahçelievler'de taze malzemelerle hazırlanan kahvaltı sunan mekan.`,
+                                        `Tunalı Kahvaltı:\nTunalı'da çağdaş kahvaltı seçenekleri sunan şık mekan.`
                                     ],
                                     'öğle yemeği': [
-                                        `Ankara Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
-                                        `Çankaya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
-                                        `Kızılay Lokantası:\n${city} bölgesinde ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`
+                                        `Ankara Kebap Evi:\nUlus'ta geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
+                                        `Çankaya Sofrası:\nÇankaya'da Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
+                                        `Kızılay Lokantası:\nKızılay'da ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`,
+                                        `Bahçelievler Kebap:\nBahçelievler'de kebap çeşitleri sunan popüler restoran.`,
+                                        `Tunalı Modern:\nTunalı'da çağdaş lezzetler sunan şık mekan.`
                                     ],
                                     'akşam yemeği': [
-                                        `Ankara Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
-                                        `Çankaya Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
-                                        `Ulus Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
+                                        `Ankara Fine Dining:\nÇankaya'da özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
+                                        `Çankaya Modern:\nÇankaya'da çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
+                                        `Ulus Geleneksel:\nUlus'ta yerel mutfağın en güzel örneklerini sunan otantik mekan.`,
+                                        `Kızılay Akşam:\nKızılay'da romantik atmosferi olan şık akşam mekanı.`,
+                                        `Tunalı Akşam:\nTunalı'da çağdaş lezzetler sunan şık akşam mekanı.`
                                     ]
                                 },
                                 'izmir': {
