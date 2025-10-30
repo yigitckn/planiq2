@@ -329,43 +329,16 @@
                     }
                     
                     // Fallback: Statik tarifler
-                    const recipes = {
-                    kahvaltı: {
-                        'genel': ['Omlet - Klasik Yumurta Yemeği', 'Menemen - Türk Kahvaltı Klasikleri', 'Yulaf Ezmesi - Sağlıklı Kahvaltı'],
-                        'Türk Mutfağı': ['Börek - Geleneksel Türk Böreği', 'Pogaca - Tuzlu Hamur İşi', 'Simit - Klasik Türk Simidi'],
-                        'Bulgar': ['Banitsa - Geleneksel Bulgar Böreği', 'Mekitsa - Bulgar Kızartması', 'Kashkaval - Bulgar Peyniri'],
-                        'İtalyan': ['Frittata - İtalyan Omleti', 'Panettone - İtalyan Tatlısı', 'Cappuccino - İtalyan Kahvesi'],
-                        'Uzak Doğu': ['Miso Çorbası - Japon Kahvaltısı', 'Congee - Pirinç Lapası', 'Dim Sum - Çin Kahvaltısı'],
-                        'Meksika': ['Huevos Rancheros - Meksika Kahvaltısı', 'Chilaquiles - Meksika Klasikleri', 'Breakfast Burrito - Meksika Burritosu'],
-                        'Hint': ['Masala Dosa - Hint Kahvaltısı', 'Paratha - Hint Ekmeği', 'Chai - Hint Çayı']
-                    },
-                    'öğle yemeği': {
-                        'genel': ['Salata', 'Sandviç', 'Çorba', 'Makarna', 'Pilav'],
-                        'Türk Mutfağı': ['Döner', 'Lahmacun', 'Pide', 'Mercimek Çorbası'],
-                        'İtalyan': ['Pizza', 'Risotto', 'Pasta', 'Minestrone'],
-                        'Uzak Doğu': ['Sushi', 'Ramen', 'Pad Thai', 'Teriyaki'],
-                        'Meksika': ['Tacos', 'Burrito', 'Quesadilla', 'Enchiladas'],
-                        'Hint': ['Biryani', 'Curry', 'Tandoori', 'Dal']
-                    },
-                    'akşam yemeği': {
-                        'genel': ['Izgara Et', 'Balık', 'Sebze Yemeği', 'Pilav', 'Salata'],
-                        'Türk Mutfağı': ['Kebap', 'Karnıyarık', 'Mantı', 'Baklava'],
-                        'İtalyan': ['Spaghetti', 'Lasagna', 'Osso Buco', 'Tiramisu'],
-                        'Uzak Doğu': ['Sushi', 'Tempura', 'Stir Fry', 'Mochi'],
-                        'Meksika': ['Fajitas', 'Chiles Rellenos', 'Tres Leches'],
-                        'Hint': ['Butter Chicken', 'Palak Paneer', 'Naan', 'Gulab Jamun']
-                    }
-                };
+                    const recipes = mockRecipes[mealType] || mockRecipes['kahvaltı'];
+const selectedRecipes = recipes.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+// AI yanıtı formatında döndür
+return selectedRecipes.join('\n\n');
                 
-                const cuisineKey = userCuisines.includes(cuisine) ? cuisine : 'genel';
-                const mealRecipes = recipes[mealType] || recipes.kahvaltı;
-                const suggestions = mealRecipes[cuisineKey] || mealRecipes.genel;
-                
-                return suggestions.slice(0, 3); // İlk 3 öneriyi döndür
                 } catch (error) {
                     console.error('Tarif öneri hatası:', error);
                     // Hata durumunda genel öneriler
-                    return ['Omlet', 'Menemen', 'Yulaf Ezmesi'];
+                    return ['Omlet', 'Menemen', 'Yulaf Ezmesi']; 
                 }
             };
             
