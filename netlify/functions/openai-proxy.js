@@ -13,9 +13,9 @@ exports.handler = async (event) => {
     try {
         const { prompt } = JSON.parse(event.body);
         if (!prompt) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Prompt is required' }) };
-
+        require('dotenv').config();
         // Buraya kendi OpenAI API anahtarını gir!
-        const OPENAI_API_KEY = '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';  // <-- Buraya kendi key'in gelecek
+        const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
