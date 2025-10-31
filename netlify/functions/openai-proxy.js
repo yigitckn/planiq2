@@ -1,4 +1,4 @@
-const fetch = require('node-fetch');
+// Node.js 18+ built-in fetch kullanıyoruz (node-fetch gerekmez)
 
 exports.handler = async (event) => {
     const headers = {
