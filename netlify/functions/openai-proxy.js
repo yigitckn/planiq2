@@ -13,7 +13,7 @@ exports.handler = async (event) => {
     try {
         const { prompt } = JSON.parse(event.body);
         if (!prompt) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Prompt is required' }) };
-        require('dotenv').config();
+        
         // Buraya kendi OpenAI API anahtarını gir!
         const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -26,7 +26,10 @@ exports.handler = async (event) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                  { "role": "system", "content": "Sen bir restoran öneri uzmanısın. Kullanıcının şehrine özel GERÇEK restoran isimleri, adresi ve kısa açıklaması ile öner ver." },
+                  { 
+                    "role": "system", 
+                    "content": "Sen bir restoran ve tarif öneri uzmanısın. Kullanıcının şehrine özel GERÇEK restoran isimleri, adresi ve kısa açıklaması ile öner ver. YANITINI MUTLAKA HTML formatında, <ul> ve <li> etiketleri kullanarak liste halinde dön. Her öneri bir <li> içinde olsun ve restoran adı <strong> etiketi ile vurgulansın." 
+                  },
                   { "role": "user", "content": prompt }
                 ],
                 max_tokens: 500,

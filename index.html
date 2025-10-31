@@ -171,28 +171,105 @@
         
         // DailyPlanCard Component
         const generateAIRecommendations = async (prompt) => {
-    try {
-        const openaiResponse = await fetch('/.netlify/functions/openai-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-        });
-        if (openaiResponse.ok) {
-            const data = await openaiResponse.json();
-            if (
-                data.choices &&
-                data.choices[0] &&
-                data.choices[0].message &&
-                data.choices[0].message.content
-            ) {
-                return data.choices[0].message.content;
+            try {
+                const openaiResponse = await fetch('/.netlify/functions/openai-proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                if (openaiResponse.ok) {
+                    const data = await openaiResponse.json();
+                    if (
+                        data.choices &&
+                        data.choices[0] &&
+                        data.choices[0].message &&
+                        data.choices[0].message.content
+                    ) {
+                        return data.choices[0].message.content;
+                    }
+                }
+            } catch (error) {
+                console.error('OpenAI proxy hatası:', error);
             }
-        }
-    } catch (error) {
-        console.error('OpenAI proxy hatası:', error);
-    }
-    return "Şu anda öneri alınamadı. Lütfen tekrar deneyin.";
-};
+            return "Şu anda öneri alınamadı. Lütfen tekrar deneyin.";
+        };
+        
+        // TARIF ÖNERİLERİ FONKSİYONU (Alican Abi'nin önerisi)
+        const generateRecipeSuggestions = async (mealType, cuisine, userCuisines) => {
+            try {
+                // YAPILANDIRILMIŞ PROMPT ŞABLONU
+                const cuisineText = userCuisines && userCuisines.length > 0 
+                    ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
+                    : cuisine || 'genel mutfak';
+                
+                const mealTypeTurkish = {
+                    'kahvaltı': 'kahvaltı',
+                    'öğle yemeği': 'öğle yemeği',
+                    'akşam yemeği': 'akşam yemeği'
+                };
+                
+                const currentMealType = mealTypeTurkish[mealType] || mealType;
+                
+                // Prompt şablonu - kullanıcı verilerini dinamik olarak ekliyoruz
+                const aiPrompt = `
+ÖĞÜN TİPİ: ${currentMealType}
+MUTFAK TERCİHLERİ: ${cuisineText}
+
+GÖREV: ${currentMealType} için evde yapılabilecek tarif önerileri ver.
+
+İSTENENLER:
+- ${cuisineText} mutfağına uygun tarifler
+- Evde kolay yapılabilecek tarifler
+- Her tarif için kısa ama öz açıklama (malzemeler ve yapılış hakkında ipuçları, max 2 cümle)
+- 3-4 farklı tarif öner
+
+FORMAT: Yanıtını HTML liste formatında ver. <ul> ve <li> etiketleri kullan.
+Örnek format:
+<ul>
+<li><strong>Tarif Adı</strong>: Kısa açıklama, malzemeler ve yapılış ipuçları</li>
+<li><strong>Tarif Adı 2</strong>: Kısa açıklama, malzemeler ve yapılış ipuçları</li>
+</ul>
+
+Sadece HTML liste formatında tarif önerilerini ver, başka açıklama yapma.`;
+                
+                // AI'dan öneri al
+                const aiResponse = await generateAIRecommendations(aiPrompt);
+                
+                if (aiResponse && typeof aiResponse === 'string') {
+                    // AI yanıtı HTML formatında geldi, direkt kullanabiliriz
+                    if (aiResponse.includes('<ul>') || aiResponse.includes('<li>')) {
+                        return aiResponse;
+                    } else {
+                        // Fallback: Eski format ise HTML'e çevir
+                        const lines = aiResponse.split('\n').filter(line => line.trim());
+                        const recipes = lines.filter(line => line.trim() && !line.startsWith('-') && !line.startsWith('•'));
+                        if (recipes.length > 0) {
+                            const htmlList = '<ul>' + recipes.map(r => 
+                                `<li><strong>${r.split(':')[0]}</strong>: ${r.split(':').slice(1).join(':')}</li>`
+                            ).join('') + '</ul>';
+                            return htmlList;
+                        }
+                    }
+                }
+                
+                // Fallback: Statik tarif önerileri
+                const fallbackRecipes = {
+                    'kahvaltı': [
+                        '<ul><li><strong>Menemen</strong>: Domates, biber, yumurta ve soğan ile hazırlanan klasik Türk kahvaltısı. 10 dakikada hazır!</li><li><strong>Omlet</strong>: Yumurta, peynir ve otlarla yapılan doyurucu kahvaltı seçeneği.</li><li><strong>Peynirli Tost</strong>: Ekmek arası beyaz peynir ve tereyağı ile yapılan pratik kahvaltı.</li></ul>',
+                    ],
+                    'öğle yemeği': [
+                        '<ul><li><strong>Makarna</strong>: Domates soslu makarna, hızlı ve doyurucu öğle yemeği seçeneği. 15 dakikada hazır!</li><li><strong>Pilav</strong>: Basmati pirinci ile hazırlanan nefis pilav tarifi.</li><li><strong>Salata</strong>: Taze sebzelerle hazırlanan sağlıklı ve hafif öğle yemeği.</li></ul>',
+                    ],
+                    'akşam yemeği': [
+                        '<ul><li><strong>Izgara Tavuk</strong>: Marine edilmiş tavuk göğsü, sebzelerle birlikte servis. 30 dakikada hazır!</li><li><strong>Sebzeli Makarna</strong>: Karma sebzelerle yapılan doyurucu akşam yemeği.</li><li><strong>Balık</strong>: Taze balık, limon ve otlarla hazırlanan hafif akşam yemeği.</li></ul>',
+                    ]
+                };
+                return fallbackRecipes[currentMealType]?.[0] || fallbackRecipes['kahvaltı'][0];
+            } catch (error) {
+                console.error('Tarif önerisi hatası:', error);
+                return '<ul><li>Tarif önerisi şu anda alınamadı. Lütfen tekrar deneyin.</li></ul>';
+            }
+        };
                 console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
                 try {
                     // OpenAI API entegrasyonu için
@@ -324,7 +401,7 @@
                     const userLocation = userData?.location || city;
                     const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
                     
-                    // AI için prompt oluştur - gerçek lokasyon bazlı
+                    // YAPILANDIRILMIŞ PROMPT ŞABLONU (Alican Abi'nin önerisi)
                     const cuisineText = userCuisines && userCuisines.length > 0 
                         ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
                         : 'Mutfak tercihi belirtilmemiş';
@@ -337,57 +414,72 @@
                     
                     const currentMealType = mealTypeTurkish[mealType] || mealType;
                     
-                    const aiPrompt = `${userCity} bölgesinde ${currentMealType} için gerçek restoran önerileri istiyorum. ${cuisineText}. 
-                    
-                    Lütfen ${userCity} bölgesinde gerçekten var olan 3-4 farklı restoran öner, her birinin adını ve detaylı açıklamasını ver. 
-                    
-                    ÖNEMLİ: 
-                    - Sadece ${userCity} bölgesindeki GERÇEK restoran isimlerini ver
-                    - Her restoran için kısa ama öz açıklama yaz
-                    - Restoranın özelliklerini, mutfağını, atmosferini belirt
-                    - Format: "Restoran Adı:\nAçıklama: [Detaylı açıklama]"
-                    
-                    Örnek format:
-                    "Pişi Breakfast & Burger:
-                    Açıklama: Beşiktaş Kahvaltıcılar Sokağı'nda pişi bazlı kahvaltılar sunan popüler mekan."
-                    
-                    Sadece ${userCity} bölgesindeki gerçek restoranları ver, başka açıklama yapma.`;
+                    // Prompt şablonu - kullanıcı verilerini dinamik olarak ekliyoruz
+                    const aiPrompt = `
+ŞEHİR: ${userCity}
+ÖĞÜN TİPİ: ${currentMealType}
+MUTFAK TERCİHLERİ: ${cuisineText}
+
+GÖREV: ${userCity} bölgesinde ${currentMealType} için gerçek restoran önerileri ver.
+
+İSTENENLER:
+- Sadece ${userCity} bölgesindeki GERÇEK restoran isimlerini ver
+- Her restoran için kısa ama öz açıklama (max 2 cümle)
+- Restoranın özelliklerini, mutfağını, atmosferini belirt
+- 3-4 farklı restoran öner
+
+FORMAT: Yanıtını HTML liste formatında ver. <ul> ve <li> etiketleri kullan.
+Örnek format:
+<ul>
+<li><strong>Restoran Adı</strong>: Kısa açıklama ve özellikler</li>
+<li><strong>Restoran Adı 2</strong>: Kısa açıklama ve özellikler</li>
+</ul>
+
+Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ver, başka açıklama yapma.`;
                     
                     // AI'dan öneri al
                     const aiResponse = await generateAIRecommendations(aiPrompt);
                     
                     if (aiResponse && typeof aiResponse === 'string') {
-                        // AI yanıtını parse et - restoran adı ve açıklama formatında
-                        const lines = aiResponse.split('\n').filter(line => line.trim());
-                        const suggestions = [];
-                        let currentRestaurant = null;
-                        
-                        for (let i = 0; i < lines.length; i++) {
-                            const line = lines[i].trim();
+                        // AI yanıtı HTML formatında geldi, direkt kullanabiliriz
+                        // Eğer HTML yoksa, eski parse mantığını kullan
+                        if (aiResponse.includes('<ul>') || aiResponse.includes('<li>')) {
+                            // HTML formatında geldi, direkt return et
+                            return aiResponse;
+                        } else {
+                            // Eski format (text), parse et
+                            const lines = aiResponse.split('\n').filter(line => line.trim());
+                            const suggestions = [];
+                            let currentRestaurant = null;
                             
-                            // Restoran adı (Açıklama: ile bitmeyen satırlar)
-                            if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
-                                if (currentRestaurant) {
-                                    suggestions.push(currentRestaurant);
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i].trim();
+                                
+                                if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
+                                    if (currentRestaurant) {
+                                        suggestions.push(currentRestaurant);
+                                    }
+                                    currentRestaurant = {
+                                        name: line.replace(/^[-•*]\s*/, ''),
+                                        description: ''
+                                    };
                                 }
-                                currentRestaurant = {
-                                    name: line.replace(/^[-•*]\s*/, ''),
-                                    description: ''
-                                };
+                                else if (line.startsWith('Açıklama:') && currentRestaurant) {
+                                    currentRestaurant.description = line.replace('Açıklama:', '').trim();
+                                }
                             }
-                            // Açıklama
-                            else if (line.startsWith('Açıklama:') && currentRestaurant) {
-                                currentRestaurant.description = line.replace('Açıklama:', '').trim();
+                            
+                            if (currentRestaurant) {
+                                suggestions.push(currentRestaurant);
                             }
-                        }
-                        
-                        // Son restoranı ekle
-                        if (currentRestaurant) {
-                            suggestions.push(currentRestaurant);
-                        }
-                        
-                        if (suggestions.length > 0) {
-                            return suggestions.map(s => `${s.name}:\n${s.description}`);
+                            
+                            if (suggestions.length > 0) {
+                                // HTML formatına çevir
+                                const htmlList = '<ul>' + suggestions.map(s => 
+                                    `<li><strong>${s.name}</strong>: ${s.description}</li>`
+                                ).join('') + '</ul>';
+                                return htmlList;
+                            }
                         }
                     }
                     
@@ -1194,29 +1286,16 @@
                             }, ['🍳', 'Tarif Önerileri']),
                             React.createElement('div', {
                                 key: 'suggestions',
-                                className: "space-y-4"
-                            }, aiSuggestionContent && Array.isArray(aiSuggestionContent) ? aiSuggestionContent.map((recipe, index) => {
-                                const [name, description] = recipe.split(':\n');
-                                return React.createElement('div', {
-                                    key: index,
-                                    className: `p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'header',
-                                        className: "flex items-center gap-2 mb-2"
-                                    }, [
-                                        React.createElement('span', { key: 'icon' }, '👨‍🍳'),
-                                        React.createElement('h4', {
-                                            key: 'name',
-                                            className: `${isDark ? 'text-white' : 'text-gray-800'} font-bold text-lg`
-                                        }, name)
-                                    ]),
-                                    React.createElement('p', {
-                                        key: 'description',
-                                        className: `${isDark ? 'text-gray-300' : 'text-gray-600'} text-sm leading-relaxed`
-                                    }, description)
-                                ]);
-                            }) : [])
+                                className: `space-y-4 ${isDark ? 'text-white' : 'text-gray-800'}`,
+                                dangerouslySetInnerHTML: aiSuggestionContent && typeof aiSuggestionContent === 'string' && (aiSuggestionContent.includes('<ul>') || aiSuggestionContent.includes('<li>'))
+                                    ? { __html: aiSuggestionContent }
+                                    : aiSuggestionContent && Array.isArray(aiSuggestionContent)
+                                        ? { __html: '<ul>' + aiSuggestionContent.map((r, i) => {
+                                            const [name, desc] = r.split(':\n');
+                                            return `<li class="p-3 mb-2 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}"><strong>${name}</strong>: ${desc}</li>`;
+                                        }).join('') + '</ul>' }
+                                        : { __html: '<p>Henüz öneri yok.</p>' }
+                            })
                         ]) : modalContentStage === 'restaurant' ? React.createElement('div', {
                             key: 'restaurantContent',
                             className: "space-y-4"
@@ -1227,29 +1306,16 @@
                             }, ['🍽️', 'Restoran Önerileri']),
                             React.createElement('div', {
                                 key: 'suggestions',
-                                className: "space-y-4"
-                            }, aiSuggestionContent && Array.isArray(aiSuggestionContent) ? aiSuggestionContent.map((restaurant, index) => {
-                                const [name, description] = restaurant.split(':\n');
-                                return React.createElement('div', {
-                                    key: index,
-                                    className: `p-4 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'header',
-                                        className: "flex items-center gap-2 mb-2"
-                                    }, [
-                                        React.createElement('span', { key: 'icon' }, '📍'),
-                                        React.createElement('h4', {
-                                            key: 'name',
-                                            className: `${isDark ? 'text-white' : 'text-gray-800'} font-bold text-lg`
-                                        }, name)
-                                    ]),
-                                    React.createElement('p', {
-                                        key: 'description',
-                                        className: `${isDark ? 'text-gray-300' : 'text-gray-600'} text-sm leading-relaxed`
-                                    }, description)
-                                ]);
-                            }) : [])
+                                className: `space-y-4 ${isDark ? 'text-white' : 'text-gray-800'}`,
+                                dangerouslySetInnerHTML: aiSuggestionContent && typeof aiSuggestionContent === 'string' && (aiSuggestionContent.includes('<ul>') || aiSuggestionContent.includes('<li>'))
+                                    ? { __html: aiSuggestionContent }
+                                    : aiSuggestionContent && Array.isArray(aiSuggestionContent)
+                                        ? { __html: '<ul>' + aiSuggestionContent.map((r, i) => {
+                                            const [name, desc] = r.split(':\n');
+                                            return `<li class="p-3 mb-2 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-gray-100'}"><strong>${name}</strong>: ${desc}</li>`;
+                                        }).join('') + '</ul>' }
+                                        : { __html: '<p>Henüz öneri yok.</p>' }
+                            })
                         ]) : React.createElement('p', {
                             key: 'suggestion',
                             className: `${isDark ? 'text-gray-300' : 'text-gray-700'}`
