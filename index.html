@@ -270,136 +270,14 @@ Sadece HTML liste formatında tarif önerilerini ver, başka açıklama yapma.`;
                 return '<ul><li>Tarif önerisi şu anda alınamadı. Lütfen tekrar deneyin.</li></ul>';
             }
         };
-                console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
-                try {
-                    // OpenAI API entegrasyonu için
-                    const generateAIRecommendations = async (prompt) => {
-                        try {
-                            // Kendi backend proxy'mizi kullan
-                            console.log('Gemini AI + Google Search çalışıyor...');
-                            
-                            const geminiResponse = await fetch('/.netlify/functions/gemini-proxy', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                    prompt: prompt,
-                                    apiKey: localStorage.getItem('gemini_api_key') || 'AIzaSyBJ40egBrIod7g6rd2h0IjCveDLlHpD4ss'
-                                })
-                            });
-
-                            if (geminiResponse.ok) {
-                                const data = await geminiResponse.json();
-                                console.log('Gemini API Response:', data);
-                                
-                                if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
-                                    const result = data.candidates[0].content.parts[0].text;
-                                    console.log('Gemini AI Success:', result);
-                                    return result;
-                                }
-                            } else {
-                                console.log('Gemini API Error:', geminiResponse.status, await geminiResponse.text());
-                            }
-                        } catch (error) {
-                            console.log('Gemini AI failed:', error);
-                        }
-
-                        // Fallback: Güçlü Mock AI (API çalışmazsa)
-                        console.log('Fallback Mock AI çalışıyor...');
-                        
-                        const locationMatch = prompt.match(/(\w+)\s+şehrinde/);
-                        const city = locationMatch ? locationMatch[1] : 'İstanbul';
-                        
-                        let mealType = 'kahvaltı';
-                        if (prompt.includes('öğle yemeği') || prompt.includes('öğle')) {
-                            mealType = 'öğle yemeği';
-                        } else if (prompt.includes('akşam yemeği') || prompt.includes('akşam')) {
-                            mealType = 'akşam yemeği';
-                        } else if (prompt.includes('kahvaltı')) {
-                            mealType = 'kahvaltı';
-                        }
-                        
-                        // Akıllı Mock AI - Kullanıcının şehrine göre özel öneriler
-                        const generateCitySpecificRestaurants = (city, mealType) => {
-                            const cityLower = city.toLowerCase();
-                            
-                            // Şehir bazlı özel restoran isimleri
-                            const cityRestaurants = {
-                                'istanbul': {
-                                    'kahvaltı': [
-                                        `Van Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısının en güzel örneklerini sunan popüler mekan.`,
-                                        `Çakır Kahvaltı:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`,
-                                        `Mado Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan popüler mekan.`
-                                    ],
-                                    'öğle yemeği': [
-                                        `Hacı Abdullah:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
-                                        `Çiya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
-                                        `Köfteci Ramiz:\n${city} bölgesinde köfte ve ızgara çeşitleriyle ünlü, hızlı servisi olan popüler mekan.`
-                                    ],
-                                    'akşam yemeği': [
-                                        `Mikla:\n${city} bölgesinde fine dining deneyimi sunan, şık atmosferi ve özel akşam menüleriyle ünlü romantik restoran.`,
-                                        `Neolokal:\n${city} bölgesinde modern Türk mutfağı sunan, akşam yemeği için özel menüleri olan şık mekan.`,
-                                        `Sunset Grill & Bar:\n${city} bölgesinde manzaralı, akşam yemeği için mükemmel atmosfer sunan lüks restoran.`
-                                    ]
-                                },
-                                'ankara': {
-                                    'kahvaltı': [
-                                        `Kızılay Kahvaltı Evi:\n${city} bölgesinde geleneksel Türk kahvaltısı sunan, sıcak atmosferi olan popüler mekan.`,
-                                        `Çankaya Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
-                                        `Ulus Kahvaltı Salonu:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`
-                                    ],
-                                    'öğle yemeği': [
-                                        `Ankara Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
-                                        `Çankaya Sofrası:\n${city} bölgesinde Anadolu mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
-                                        `Kızılay Lokantası:\n${city} bölgesinde ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`
-                                    ],
-                                    'akşam yemeği': [
-                                        `Ankara Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
-                                        `Çankaya Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
-                                        `Ulus Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
-                                    ]
-                                },
-                                'izmir': {
-                                    'kahvaltı': [
-                                        `Konak Kahvaltı Evi:\n${city} bölgesinde Ege mutfağının lezzetlerini sunan, deniz manzaralı popüler mekan.`,
-                                        `Alsancak Kahvaltı:\n${city} bölgesinde modern kahvaltı seçenekleri sunan, geniş menü çeşitliliği olan mekan.`,
-                                        `Bornova Kahvaltı Salonu:\n${city} bölgesinde serpme kahvaltı geleneğini yaşatan, doğal ürünlerle hazırlanan lezzetli mekan.`
-                                    ],
-                                    'öğle yemeği': [
-                                        `İzmir Kebap Evi:\n${city} bölgesinde geleneksel Türk mutfağı sunan, özellikle kebap çeşitleriyle ünlü popüler mekan.`,
-                                        `Ege Sofrası:\n${city} bölgesinde Ege mutfak kültürünü yansıtan, geleneksel yemekleri modern sunumla birleştiren restoran.`,
-                                        `Konak Lokantası:\n${city} bölgesinde ev yemekleri ve geleneksel lezzetler sunan, hızlı servisi olan popüler mekan.`
-                                    ],
-                                    'akşam yemeği': [
-                                        `İzmir Fine Dining:\n${city} bölgesinde özel akşam menüleri ve şık atmosferi olan romantik restoran.`,
-                                        `Alsancak Modern:\n${city} bölgesinde çağdaş lezzetler ve yenilikçi sunumlar sunan şık mekan.`,
-                                        `Bornova Geleneksel:\n${city} bölgesinde yerel mutfağın en güzel örneklerini sunan otantik mekan.`
-                                    ]
-                                }
-                            };
-                            
-                            // Şehir algılama
-                            let cityKey = 'istanbul'; // varsayılan
-                            if (cityLower.includes('ankara') || cityLower.includes('çankaya') || cityLower.includes('kızılay')) {
-                                cityKey = 'ankara';
-                            } else if (cityLower.includes('izmir') || cityLower.includes('konak') || cityLower.includes('alsancak')) {
-                                cityKey = 'izmir';
-                            } else if (cityLower.includes('istanbul') || cityLower.includes('beşiktaş') || cityLower.includes('şişli') || cityLower.includes('kadıköy')) {
-                                cityKey = 'istanbul';
-                            }
-                            
-                            return cityRestaurants[cityKey]?.[mealType] || cityRestaurants['istanbul']['kahvaltı'];
-                        };
-                        
-                        const responses = generateCitySpecificRestaurants(city, mealType);
-                        const selectedResponses = responses.sort(() => 0.5 - Math.random()).slice(0, 3);
-                        return selectedResponses;
-                    };
-                    
-                    // Kullanıcının onboarding'de girdiği gerçek lokasyonu al
-                    const userLocation = userData?.location || city;
-                    const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
+        
+        // RESTORAN ÖNERİLERİ FONKSİYONU (Alican Abi'nin önerisi)
+        const generateRestaurantSuggestions = async (mealType, city, userCuisines) => {
+            console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
+            try {
+                // Kullanıcının onboarding'de girdiği gerçek lokasyonu al
+                const userLocation = city || '';
+                const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
                     
                     // YAPILANDIRILMIŞ PROMPT ŞABLONU (Alican Abi'nin önerisi)
                     const cuisineText = userCuisines && userCuisines.length > 0 
@@ -799,25 +677,31 @@ Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ve
                         suggestions = mealRestaurants.genel.slice(0, 3);
                     }
                     
-                    // Benzersiz öneriler döndür
+                    // Benzersiz öneriler döndür - HTML formatına çevir
                     const finalSuggestions = [...new Set(suggestions)].slice(0, 4);
                     console.log('Final restoran önerileri:', finalSuggestions);
-                    return finalSuggestions;
+                    
+                    // HTML formatına çevir
+                    const htmlList = '<ul>' + finalSuggestions.map(s => {
+                        const [name, desc] = s.split(':\n');
+                        return `<li><strong>${name || s}</strong>: ${desc || ''}</li>`;
+                    }).join('') + '</ul>';
+                    
+                    return htmlList;
                     
                 } catch (error) {
                     console.error('Restoran öneri hatası:', error);
-                    // Hata durumunda genel öneriler
-                    return [
-                        `${city} bölgesinde Popüler Restoran - Yerel Lezzetler`,
-                        `${city} bölgesinde Geleneksel Mutfak - Klasik Yemekler`,
-                        `${city} bölgesinde Modern Kafe - Çağdaş Seçenekler`,
-                        `${city} bölgesinde Aile Restoranı - Sıcak Ortam`
-                    ];
+                    // Hata durumunda genel öneriler - HTML formatında
+                    return `<ul>
+                        <li><strong>${city} Popüler Restoran</strong>: Yerel lezzetler ve sıcak atmosfer</li>
+                        <li><strong>${city} Geleneksel Mutfak</strong>: Klasik yemekler ve otantik deneyim</li>
+                        <li><strong>${city} Modern Kafe</strong>: Çağdaş seçenekler ve rahat ortam</li>
+                    </ul>`;
                 }
-            
-            
-           // Generate AI tasks based on user data
-           const generateAITasks = (userData, dateKey) => {
+        };
+        
+        // Generate AI tasks based on user data
+        const generateAITasks = (userData, dateKey) => {
                 if (!userData) return [];
                 
                 const targetDate = new Date(dateKey + 'T00:00:00');
