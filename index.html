@@ -169,7 +169,7 @@
             ]);
         };
         
-        // DailyPlanCard Component
+        // AI Önerileri için yardımcı fonksiyon
         const generateAIRecommendations = async (prompt) => {
             try {
                 const openaiResponse = await fetch('/.netlify/functions/openai-proxy', {
@@ -194,13 +194,21 @@
             return "Şu anda öneri alınamadı. Lütfen tekrar deneyin.";
         };
         
-        // TARIF ÖNERİLERİ FONKSİYONU (Alican Abi'nin önerisi)
+        // Mutfak metni yardımcı fonksiyonu
+        function getCuisineText(userCuisines, cuisine) {
+            if (userCuisines && userCuisines.length > 0) {
+                return `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}`;
+            } else if (cuisine && cuisine !== 'genel') {
+                return `${cuisine} mutfağı`;
+            } else {
+                return 'Genel mutfak';
+            }
+        }
+        
+        // TARIF ÖNERİLERİ FONKSİYONU
         const generateRecipeSuggestions = async (mealType, cuisine, userCuisines) => {
             try {
-                // YAPILANDIRILMIŞ PROMPT ŞABLONU
-                const cuisineText = userCuisines && userCuisines.length > 0 
-                    ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
-                    : cuisine || 'genel mutfak';
+                const cuisineText = getCuisineText(userCuisines, cuisine);
                 
                 const mealTypeTurkish = {
                     'kahvaltı': 'kahvaltı',
@@ -210,7 +218,6 @@
                 
                 const currentMealType = mealTypeTurkish[mealType] || mealType;
                 
-                // Prompt şablonu - kullanıcı verilerini dinamik olarak ekliyoruz
                 const aiPrompt = `
 ÖĞÜN TİPİ: ${currentMealType}
 MUTFAK TERCİHLERİ: ${cuisineText}
@@ -232,15 +239,12 @@ FORMAT: Yanıtını HTML liste formatında ver. <ul> ve <li> etiketleri kullan.
 
 Sadece HTML liste formatında tarif önerilerini ver, başka açıklama yapma.`;
                 
-                // AI'dan öneri al
                 const aiResponse = await generateAIRecommendations(aiPrompt);
                 
                 if (aiResponse && typeof aiResponse === 'string') {
-                    // AI yanıtı HTML formatında geldi, direkt kullanabiliriz
                     if (aiResponse.includes('<ul>') || aiResponse.includes('<li>')) {
                         return aiResponse;
                     } else {
-                        // Fallback: Eski format ise HTML'e çevir
                         const lines = aiResponse.split('\n').filter(line => line.trim());
                         const recipes = lines.filter(line => line.trim() && !line.startsWith('-') && !line.startsWith('•'));
                         if (recipes.length > 0) {
@@ -271,29 +275,25 @@ Sadece HTML liste formatında tarif önerilerini ver, başka açıklama yapma.`;
             }
         };
         
-        // RESTORAN ÖNERİLERİ FONKSİYONU (Alican Abi'nin önerisi)
+        // RESTORAN ÖNERİLERİ FONKSİYONU
         const generateRestaurantSuggestions = async (mealType, city, userCuisines) => {
             console.log('generateRestaurantSuggestions çağrıldı:', { mealType, city, userCuisines });
             try {
-                // Kullanıcının onboarding'de girdiği gerçek lokasyonu al
                 const userLocation = city || '';
-                const userCity = userLocation.split(',')[0].trim(); // Sadece şehir adını al
-                    
-                    // YAPILANDIRILMIŞ PROMPT ŞABLONU (Alican Abi'nin önerisi)
-                    const cuisineText = userCuisines && userCuisines.length > 0 
-                        ? `Kullanıcının sevdiği mutfaklar: ${userCuisines.join(', ')}` 
-                        : 'Mutfak tercihi belirtilmemiş';
-                    
-                    const mealTypeTurkish = {
-                        'kahvaltı': 'kahvaltı',
-                        'öğle yemeği': 'öğle yemeği',
-                        'akşam yemeği': 'akşam yemeği'
-                    };
-                    
-                    const currentMealType = mealTypeTurkish[mealType] || mealType;
-                    
-                    // Prompt şablonu - kullanıcı verilerini dinamik olarak ekliyoruz
-                    const aiPrompt = `
+                const userCity = userLocation.split(',')[0].trim();
+                
+                const cuisineText = getCuisineText(userCuisines, 'genel');
+                
+                const mealTypeTurkish = {
+                    'kahvaltı': 'kahvaltı',
+                    'öğle yemeği': 'öğle yemeği',
+                    'akşam yemeği': 'akşam yemeği'
+                };
+                
+                const currentMealType = mealTypeTurkish[mealType] || mealType;
+                
+                // Prompt şablonu - kullanıcı verilerini dinamik olarak ekliyoruz
+                const aiPrompt = `
 ŞEHİR: ${userCity}
 ÖĞÜN TİPİ: ${currentMealType}
 MUTFAK TERCİHLERİ: ${cuisineText}
@@ -314,58 +314,58 @@ FORMAT: Yanıtını HTML liste formatında ver. <ul> ve <li> etiketleri kullan.
 </ul>
 
 Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ver, başka açıklama yapma.`;
-                    
-                    // AI'dan öneri al
-                    const aiResponse = await generateAIRecommendations(aiPrompt);
-                    
-                    if (aiResponse && typeof aiResponse === 'string') {
-                        // AI yanıtı HTML formatında geldi, direkt kullanabiliriz
-                        // Eğer HTML yoksa, eski parse mantığını kullan
-                        if (aiResponse.includes('<ul>') || aiResponse.includes('<li>')) {
-                            // HTML formatında geldi, direkt return et
-                            return aiResponse;
-                        } else {
-                            // Eski format (text), parse et
-                            const lines = aiResponse.split('\n').filter(line => line.trim());
-                            const suggestions = [];
-                            let currentRestaurant = null;
+                
+                // AI'dan öneri al
+                const aiResponse = await generateAIRecommendations(aiPrompt);
+                
+                if (aiResponse && typeof aiResponse === 'string') {
+                    // AI yanıtı HTML formatında geldi, direkt kullanabiliriz
+                    // Eğer HTML yoksa, eski parse mantığını kullan
+                    if (aiResponse.includes('<ul>') || aiResponse.includes('<li>')) {
+                        // HTML formatında geldi, direkt return et
+                        return aiResponse;
+                    } else {
+                        // Eski format (text), parse et
+                        const lines = aiResponse.split('\n').filter(line => line.trim());
+                        const suggestions = [];
+                        let currentRestaurant = null;
+                        
+                        for (let i = 0; i < lines.length; i++) {
+                            const line = lines[i].trim();
                             
-                            for (let i = 0; i < lines.length; i++) {
-                                const line = lines[i].trim();
-                                
-                                if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
-                                    if (currentRestaurant) {
-                                        suggestions.push(currentRestaurant);
-                                    }
-                                    currentRestaurant = {
-                                        name: line.replace(/^[-•*]\s*/, ''),
-                                        description: ''
-                                    };
+                            if (line && !line.startsWith('Açıklama:') && !line.match(/^\d+\./)) {
+                                if (currentRestaurant) {
+                                    suggestions.push(currentRestaurant);
                                 }
-                                else if (line.startsWith('Açıklama:') && currentRestaurant) {
-                                    currentRestaurant.description = line.replace('Açıklama:', '').trim();
-                                }
+                                currentRestaurant = {
+                                    name: line.replace(/^[-•*]\s*/, ''),
+                                    description: ''
+                                };
                             }
-                            
-                            if (currentRestaurant) {
-                                suggestions.push(currentRestaurant);
-                            }
-                            
-                            if (suggestions.length > 0) {
-                                // HTML formatına çevir
-                                const htmlList = '<ul>' + suggestions.map(s => 
-                                    `<li><strong>${s.name}</strong>: ${s.description}</li>`
-                                ).join('') + '</ul>';
-                                return htmlList;
+                            else if (line.startsWith('Açıklama:') && currentRestaurant) {
+                                currentRestaurant.description = line.replace('Açıklama:', '').trim();
                             }
                         }
+                        
+                        if (currentRestaurant) {
+                            suggestions.push(currentRestaurant);
+                        }
+                        
+                        if (suggestions.length > 0) {
+                            // HTML formatına çevir
+                            const htmlList = '<ul>' + suggestions.map(s => 
+                                `<li><strong>${s.name}</strong>: ${s.description}</li>`
+                            ).join('') + '</ul>';
+                            return htmlList;
+                        }
                     }
-                    
-                    // Fallback: Statik veriler (API çalışmazsa) - Kullanıcının lokasyonuna göre
-                    const fallbackRestaurants = {
-                        'sofya': {
-                            kahvaltı: {
-                                'Türk Mutfağı': [
+                }
+                
+                // Fallback: Statik veriler (API çalışmazsa) - Kullanıcının lokasyonuna göre
+                const fallbackRestaurants = {
+                    'sofya': {
+                        kahvaltı: {
+                            'Türk Mutfağı': [
                                     'Sultan Sofya:\nGeleneksel Türk kahvaltısının en güzel örneklerini sunan, sıcak ve samimi atmosferi olan popüler bir mekandır.',
                                     'Balkan Evi:\nKarışık kahvaltı tabağı ve Balkan mutfağının lezzetlerini sunan, geniş menü seçenekleri olan popüler bir mekandır.',
                                     'İstanbul Kafe:\nSerpme kahvaltı ve Türk çayı geleneğini yaşatan, huzurlu bir ortama sahip popüler bir mekandır.'
@@ -635,69 +635,69 @@ Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ve
                                 ]
                             }
                         }
-                    };
-                    
-                    // Şehir kontrolü ve öneri seçimi
-                    const cityLower = city.toLowerCase();
-                    let cityKey = 'genel'; // varsayılan
-                    
-                    if (cityLower.includes('sofya') || cityLower.includes('sofia') || cityLower.includes('bulgaristan') || cityLower.includes('bulgaria')) {
-                        cityKey = 'sofya';
-                    } else if (cityLower.includes('şişli') || cityLower.includes('nişantaşı') || cityLower.includes('harbiye') || cityLower.includes('teşvikiye') || cityLower.includes('maçka')) {
-                        cityKey = 'şişli';
-                    } else if (cityLower.includes('kadıköy') || cityLower.includes('moda') || cityLower.includes('fenerbahçe')) {
-                        cityKey = 'kadıköy';
-                    } else if (cityLower.includes('beşiktaş') || cityLower.includes('ortaköy') || cityLower.includes('bebek')) {
-                        cityKey = 'beşiktaş';
-                    } else {
-                        // Bilinmeyen şehir için genel öneriler
-                        cityKey = 'genel';
-                    }
-                    
-                    const cityRestaurants = fallbackRestaurants[cityKey] || fallbackRestaurants['genel'];
-                    const mealRestaurants = cityRestaurants[mealType] || cityRestaurants.kahvaltı;
-                    
-                    // Kullanıcının tercih ettiği mutfaklara göre öneri seç
-                    let suggestions = [];
-                    
-                    if (userCuisines && userCuisines.length > 0) {
-                        // Kullanıcının tercih ettiği mutfaklardan öneri seç
-                        for (const cuisine of userCuisines) {
-                            if (mealRestaurants[cuisine]) {
-                                suggestions = suggestions.concat(mealRestaurants[cuisine].slice(0, 2));
-                            }
-                        }
-                        
-                        // Eğer yeterli öneri yoksa genel kategoriden ekle
-                        if (suggestions.length < 3) {
-                            suggestions = suggestions.concat(mealRestaurants.genel.slice(0, 3 - suggestions.length));
-                        }
-                    } else {
-                        // Tercih yoksa genel kategoriden seç
-                        suggestions = mealRestaurants.genel.slice(0, 3);
-                    }
-                    
-                    // Benzersiz öneriler döndür - HTML formatına çevir
-                    const finalSuggestions = [...new Set(suggestions)].slice(0, 4);
-                    console.log('Final restoran önerileri:', finalSuggestions);
-                    
-                    // HTML formatına çevir
-                    const htmlList = '<ul>' + finalSuggestions.map(s => {
-                        const [name, desc] = s.split(':\n');
-                        return `<li><strong>${name || s}</strong>: ${desc || ''}</li>`;
-                    }).join('') + '</ul>';
-                    
-                    return htmlList;
-                    
-                } catch (error) {
-                    console.error('Restoran öneri hatası:', error);
-                    // Hata durumunda genel öneriler - HTML formatında
-                    return `<ul>
-                        <li><strong>${city} Popüler Restoran</strong>: Yerel lezzetler ve sıcak atmosfer</li>
-                        <li><strong>${city} Geleneksel Mutfak</strong>: Klasik yemekler ve otantik deneyim</li>
-                        <li><strong>${city} Modern Kafe</strong>: Çağdaş seçenekler ve rahat ortam</li>
-                    </ul>`;
+                };
+                
+                // Şehir kontrolü ve öneri seçimi
+                const cityLower = city.toLowerCase();
+                let cityKey = 'genel'; // varsayılan
+                
+                if (cityLower.includes('sofya') || cityLower.includes('sofia') || cityLower.includes('bulgaristan') || cityLower.includes('bulgaria')) {
+                    cityKey = 'sofya';
+                } else if (cityLower.includes('şişli') || cityLower.includes('nişantaşı') || cityLower.includes('harbiye') || cityLower.includes('teşvikiye') || cityLower.includes('maçka')) {
+                    cityKey = 'şişli';
+                } else if (cityLower.includes('kadıköy') || cityLower.includes('moda') || cityLower.includes('fenerbahçe')) {
+                    cityKey = 'kadıköy';
+                } else if (cityLower.includes('beşiktaş') || cityLower.includes('ortaköy') || cityLower.includes('bebek')) {
+                    cityKey = 'beşiktaş';
+                } else {
+                    // Bilinmeyen şehir için genel öneriler
+                    cityKey = 'genel';
                 }
+                
+                const cityRestaurants = fallbackRestaurants[cityKey] || fallbackRestaurants['genel'];
+                const mealRestaurants = cityRestaurants[mealType] || cityRestaurants.kahvaltı;
+                
+                // Kullanıcının tercih ettiği mutfaklara göre öneri seç
+                let suggestions = [];
+                
+                if (userCuisines && userCuisines.length > 0) {
+                    // Kullanıcının tercih ettiği mutfaklardan öneri seç
+                    for (const cuisine of userCuisines) {
+                        if (mealRestaurants[cuisine]) {
+                            suggestions = suggestions.concat(mealRestaurants[cuisine].slice(0, 2));
+                        }
+                    }
+                    
+                    // Eğer yeterli öneri yoksa genel kategoriden ekle
+                    if (suggestions.length < 3) {
+                        suggestions = suggestions.concat(mealRestaurants.genel.slice(0, 3 - suggestions.length));
+                    }
+                } else {
+                    // Tercih yoksa genel kategoriden seç
+                    suggestions = mealRestaurants.genel.slice(0, 3);
+                }
+                
+                // Benzersiz öneriler döndür - HTML formatına çevir
+                const finalSuggestions = [...new Set(suggestions)].slice(0, 4);
+                console.log('Final restoran önerileri:', finalSuggestions);
+                
+                // HTML formatına çevir
+                const htmlList = '<ul>' + finalSuggestions.map(s => {
+                    const [name, desc] = s.split(':\n');
+                    return `<li><strong>${name || s}</strong>: ${desc || ''}</li>`;
+                }).join('') + '</ul>';
+                
+                return htmlList;
+                
+            } catch (error) {
+                console.error('Restoran öneri hatası:', error);
+                // Hata durumunda genel öneriler - HTML formatında
+                return `<ul>
+                    <li><strong>${city} Popüler Restoran</strong>: Yerel lezzetler ve sıcak atmosfer</li>
+                    <li><strong>${city} Geleneksel Mutfak</strong>: Klasik yemekler ve otantik deneyim</li>
+                    <li><strong>${city} Modern Kafe</strong>: Çağdaş seçenekler ve rahat ortam</li>
+                </ul>`;
+            }
         };
         
         // Generate AI tasks based on user data
@@ -814,91 +814,103 @@ Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ve
                 return generatedTasks.sort((a, b) => a.time.localeCompare(b.time));
             };
             
-            useEffect(() => {
-                if (userData && selectedDateKey) {
-                    const aiTasks = generateAITasks(userData, selectedDateKey);
-                    
-                    // Schedule görevlerini ekle (eğer varsa)
-                    let scheduleTasks = [];
-                    if (userData.scheduleTasks) {
-                        const today = new Date(selectedDateKey + 'T00:00:00');
-                        const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
-                        const todayName = dayNames[today.getDay()];
-                        
-                        scheduleTasks = userData.scheduleTasks.filter(task => 
-                            task.dayOfWeek === todayName && task.isRecurring
-                        ).map(task => ({
-                            ...task,
-                            id: `${task.id}-${selectedDateKey}` // Benzersiz ID için tarih ekle
-                        }));
-                    }
-                    
-                    // Tüm görevleri birleştir ve sırala
-                    const allTasks = [...aiTasks, ...scheduleTasks].sort((a, b) => a.time.localeCompare(b.time));
-                    setTasks(allTasks);
-                    setIsLoadingTasks(false);
-                }
-            }, [userData, selectedDateKey]);
-            
-            const toggleTaskStatus = (taskId, currentStatus) => {
-                setTasks(prevTasks => 
-                    prevTasks.map(task => 
-                        task.id === taskId 
-                            ? { ...task, status: currentStatus === 'Tamamlandı' ? 'Planlandı' : 'Tamamlandı' }
-                            : task
-                    )
-                );
-            };
-            
-            const deleteTask = (taskId) => {
-                setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
-            };
-            
-            const addTask = async () => {
-                if (!newTask.time || !newTask.name) return;
+            // DailyPlanCard Component
+            const DailyPlanCard = ({ userData, selectedDate, isDark }) => {
+                const [tasks, setTasks] = useState([]);
+                const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+                const [newTask, setNewTask] = useState({ time: '', name: '' });
+                const [isAddingTask, setIsAddingTask] = useState(false);
+                const [modalTask, setModalTask] = useState(null);
+                const [modalContentStage, setModalContentStage] = useState('initial');
+                const [aiSuggestionContent, setAiSuggestionContent] = useState(null);
                 
-                const newTaskObj = {
-                    id: `manual_${Date.now()}`,
-                    time: newTask.time,
-                    name: newTask.name,
-                    status: 'Planlandı',
-                    isAISuggestion: false,
-                    isRoutine: false
+                const selectedDateKey = formatDateKey(selectedDate);
+                
+                useEffect(() => {
+                    if (userData && selectedDateKey) {
+                        const aiTasks = generateAITasks(userData, selectedDateKey);
+                        
+                        // Schedule görevlerini ekle (eğer varsa)
+                        let scheduleTasks = [];
+                        if (userData.scheduleTasks) {
+                            const today = new Date(selectedDateKey + 'T00:00:00');
+                            const dayNames = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+                            const todayName = dayNames[today.getDay()];
+                            
+                            scheduleTasks = userData.scheduleTasks.filter(task => 
+                                task.dayOfWeek === todayName && task.isRecurring
+                            ).map(task => ({
+                                ...task,
+                                id: `${task.id}-${selectedDateKey}` // Benzersiz ID için tarih ekle
+                            }));
+                        }
+                        
+                        // Tüm görevleri birleştir ve sırala
+                        const allTasks = [...aiTasks, ...scheduleTasks].sort((a, b) => a.time.localeCompare(b.time));
+                        setTasks(allTasks);
+                        setIsLoadingTasks(false);
+                    }
+                }, [userData, selectedDateKey]);
+                
+                const toggleTaskStatus = (taskId, currentStatus) => {
+                    setTasks(prevTasks => 
+                        prevTasks.map(task => 
+                            task.id === taskId 
+                                ? { ...task, status: currentStatus === 'Tamamlandı' ? 'Planlandı' : 'Tamamlandı' }
+                                : task
+                        )
+                    );
                 };
                 
-                setTasks(prevTasks => [...prevTasks, newTaskObj].sort((a, b) => a.time.localeCompare(b.time)));
-                setNewTask({ time: '', name: '' });
-                setIsAddingTask(false);
-            };
-            
-            const getStatusColor = (status) => {
-                if (isDark) {
-                    const colors = {
-                        'Tamamlandı': 'bg-green-900/50 text-green-300 border-green-700',
-                        'Planlandı': 'bg-blue-900/50 text-blue-300 border-blue-700',
-                        'Beklemede': 'bg-yellow-900/50 text-yellow-300 border-yellow-700'
+                const deleteTask = (taskId) => {
+                    setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+                };
+                
+                const addTask = async () => {
+                    if (!newTask.time || !newTask.name) return;
+                    
+                    const newTaskObj = {
+                        id: `manual_${Date.now()}`,
+                        time: newTask.time,
+                        name: newTask.name,
+                        status: 'Planlandı',
+                        isAISuggestion: false,
+                        isRoutine: false
                     };
-                    return colors[status] || 'bg-gray-700 text-gray-300 border-gray-600';
-                } else {
-                    const colors = {
-                        'Tamamlandı': 'bg-green-100 text-green-700 border-green-300',
-                        'Planlandı': 'bg-blue-100 text-blue-700 border-blue-300',
-                        'Beklemede': 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                    };
-                    return colors[status] || 'bg-gray-100 text-gray-700 border-gray-300';
-                }
-            };
-            
-            const significantTasks = tasks.filter(task => !task.isRoutine);
-            const totalSignificantTasks = significantTasks.length;
-            const completedSignificantTasks = significantTasks.filter(t => t.status === 'Tamamlandı').length;
-            const completionPercentage = Math.round((completedSignificantTasks / (totalSignificantTasks || 1)) * 100);
-            
-            const fullDateString = formatFullDate(new Date(selectedDateKey + 'T00:00:00'));
-            
-            return React.createElement('div', {
-                className: `${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-2xl overflow-hidden transition-colors duration-300`
-            }, [
+                    
+                    setTasks(prevTasks => [...prevTasks, newTaskObj].sort((a, b) => a.time.localeCompare(b.time)));
+                    setNewTask({ time: '', name: '' });
+                    setIsAddingTask(false);
+                };
+                
+                const getStatusColor = (status) => {
+                    if (isDark) {
+                        const colors = {
+                            'Tamamlandı': 'bg-green-900/50 text-green-300 border-green-700',
+                            'Planlandı': 'bg-blue-900/50 text-blue-300 border-blue-700',
+                            'Beklemede': 'bg-yellow-900/50 text-yellow-300 border-yellow-700'
+                        };
+                        return colors[status] || 'bg-gray-700 text-gray-300 border-gray-600';
+                    } else {
+                        const colors = {
+                            'Tamamlandı': 'bg-green-100 text-green-700 border-green-300',
+                            'Planlandı': 'bg-blue-100 text-blue-700 border-blue-300',
+                            'Beklemede': 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                        };
+                        return colors[status] || 'bg-gray-100 text-gray-700 border-gray-300';
+                    }
+                };
+                
+                const significantTasks = tasks.filter(task => !task.isRoutine);
+                const totalSignificantTasks = significantTasks.length;
+                const completedSignificantTasks = significantTasks.filter(t => t.status === 'Tamamlandı').length;
+                const completionPercentage = Math.round((completedSignificantTasks / (totalSignificantTasks || 1)) * 100);
+                
+                const fullDateString = formatFullDate(new Date(selectedDateKey + 'T00:00:00'));
+                
+                return React.createElement('div', {
+                    className: `${isDark ? 'bg-gray-800' : 'bg-white'} rounded-3xl shadow-2xl overflow-hidden transition-colors duration-300`
+                }, [
                 // Header
                 React.createElement('div', {
                     key: 'header',
@@ -2460,7 +2472,7 @@ Sadece HTML liste formatında ${userCity} bölgesindeki gerçek restoranları ve
                     }, React.createElement(DailyPlanCard, {
                         day: displayDate,
                         userData: userData,
-                        selectedDateKey: selectedDateKey,
+                        selectedDate: selectedDate,
                         userId: userId,
                         isDark: isDark
                     }))
